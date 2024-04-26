@@ -1,6 +1,6 @@
 {
-    "name": "Integration blueprint",
-    "filename": "integration_blueprint.zip",
+    "name": "Climate with heat loss calculation",
+    "filename": "AnderzL7/climate_heat_loss.zip",
     "hide_default_branch": true,
     "homeassistant": "2023.8.0",
     "render_readme": true,

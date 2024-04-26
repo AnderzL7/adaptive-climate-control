@@ -1,0 +1,12 @@
+{
+  "domain": "climate_heat_loss",
+  "name": "Climate with heat loss calculation",
+  "codeowners": [
+    "@ludeeus"
+  ],
+  "config_flow": true,
+  "documentation": "https://github.com/AnderzL7/climate_heat_loss",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/AnderzL7/climate_heat_loss/issues",
+  "version": "0.0.0"
+}
