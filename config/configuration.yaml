@@ -36,6 +36,7 @@ input_boolean:
 
 climate:
   - platform: climate_heat_loss
+    name: Heat loss climate
     heater: input_boolean.climate_switch
     target_sensor: input_number.temp_sensor
     power_limit:

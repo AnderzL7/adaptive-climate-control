@@ -237,97 +237,102 @@ def validate_heat_loss_scale_factors(key):
     return key
 
 
-PLATFORM_SCHEMA.extend(
-    {
-        vol.Required(CONF_HEATER): cv.entity_id,
-        vol.Required(CONF_SENSOR): cv.entity_id,
-        vol.Optional(CONF_AC_MODE): cv.boolean,
-        vol.Optional(CONF_MAX_TEMP): vol.Coerce(float),
-        vol.Optional(CONF_MIN_DUR): cv.positive_time_period,
-        vol.Optional(CONF_MIN_TEMP): vol.Coerce(float),
-        vol.Optional(CONF_NAME, default=CLIMATE_DEFAULT_NAME): cv.string,
-        vol.Optional(
-            CONF_COLD_TOLERANCE, default=CLIMATE_DEFAULT_TOLERANCE
-        ): vol.Coerce(float),
-        vol.Optional(CONF_HOT_TOLERANCE, default=CLIMATE_DEFAULT_TOLERANCE): vol.Coerce(
-            float
-        ),
-        vol.Optional(CONF_TARGET_TEMP): vol.Coerce(float),
-        vol.Optional(CONF_KEEP_ALIVE): cv.positive_time_period,
-        vol.Optional(CONF_INITIAL_HVAC_MODE): vol.In(
-            [HVACMode.COOL, HVACMode.HEAT, HVACMode.OFF]
-        ),
-        vol.Optional(CONF_PRECISION): vol.In(
-            [PRECISION_TENTHS, PRECISION_HALVES, PRECISION_WHOLE]
-        ),
-        vol.Optional(CONF_TEMP_STEP): vol.In(
-            [PRECISION_TENTHS, PRECISION_HALVES, PRECISION_WHOLE]
-        ),
-        vol.Optional(CONF_UNIQUE_ID): cv.string,
-    },
-).extend(
-    {vol.Optional(v): vol.Coerce(float) for (k, v) in CONF_PRESETS.items()}
-).extend(
-    {
-        vol.Optional(CONF_HEAT_LOSS): vol.All(
-            {
-                vol.Required(CONF_HEAT_LOSS_ENERGY_LOSS): vol.Any(
-                    cv.entity_id, vol.Coerce(float), cv.template
-                ),
-                vol.Required(CONF_HEAT_LOSS_ENERGY_INPUT): vol.Any(
-                    cv.entity_id, vol.Coerce(float), cv.template
-                ),
-                # vol.Optional(CONF_HEAT_LOSS_PERIOD): cv.positive_time_period,
-                # vol.Optional(CONF_HEAT_LOSS_CONTRIBUTION): vol.Any(
-                #     cv.entity_id, vol.Coerce(float), cv.template
-                # ),
-                vol.Optional(CONF_HEAT_LOSS_SCALE_FACTORS): cv.schema_with_slug_keys(
-                    value_schema=cv.positive_float,
-                    slug_validator=validate_heat_loss_scale_factors,
-                ),
-            },
-            check_main_secondary(
-                [CONF_HEAT_LOSS_ENERGY_LOSS, CONF_HEAT_LOSS_ENERGY_INPUT],
-                [
-                    # CONF_HEAT_LOSS_PERIOD,
-                    # CONF_HEAT_LOSS_CONTRIBUTION
-                    CONF_HEAT_LOSS_SCALE_FACTORS
-                ],
+PLATFORM_SCHEMA = (
+    PLATFORM_SCHEMA.extend(
+        {
+            vol.Required(CONF_HEATER): cv.entity_id,
+            vol.Required(CONF_SENSOR): cv.entity_id,
+            vol.Optional(CONF_AC_MODE): cv.boolean,
+            vol.Optional(CONF_MAX_TEMP): vol.Coerce(float),
+            vol.Optional(CONF_MIN_DUR): cv.positive_time_period,
+            vol.Optional(CONF_MIN_TEMP): vol.Coerce(float),
+            vol.Optional(CONF_NAME, default=CLIMATE_DEFAULT_NAME): cv.string,
+            vol.Optional(
+                CONF_COLD_TOLERANCE, default=CLIMATE_DEFAULT_TOLERANCE
+            ): vol.Coerce(float),
+            vol.Optional(
+                CONF_HOT_TOLERANCE, default=CLIMATE_DEFAULT_TOLERANCE
+            ): vol.Coerce(float),
+            vol.Optional(CONF_TARGET_TEMP): vol.Coerce(float),
+            vol.Optional(CONF_KEEP_ALIVE): cv.positive_time_period,
+            vol.Optional(CONF_INITIAL_HVAC_MODE): vol.In(
+                [HVACMode.COOL, HVACMode.HEAT, HVACMode.OFF]
             ),
-        ),
-    }
-).extend(
-    {
-        vol.Optional(CONF_POWER_LIMIT): vol.All(
-            {
-                vol.Required(CONF_POWER_INPUT): vol.Any(cv.entity_id, cv.template),
-                vol.Optional(CONF_WANTED_POWER_LIMIT): vol.Any(
-                    cv.positive_float, cv.entity_id, cv.template
-                ),
-                vol.Optional(
-                    CONF_WANTED_LIMIT_DELAY, default=timedelta(minutes=2)
-                ): cv.positive_time_period,
-                # vol.Optional(CONF_POWER_LIMIT_PERIOD): cv.positive_time_period,
-                vol.Optional(CONF_ABSOLUTE_POWER_LIMIT): vol.Any(
-                    cv.positive_float, cv.entity_id, cv.template
-                ),
-                vol.Optional(
-                    CONF_ABSOLUTE_POWER_LIMIT_DELAY, default=timedelta(seconds=30)
-                ): cv.positive_time_period,
-                # vol.Optional(CONF_POWER_LIMIT_NOTIFICATION): cv.SERVICE_SCHEMA,
-                vol.Optional(
-                    CONF_POWER_LIMIT_SCALE_FACTORS, default=HEAT_LOSS_DEFAULT_SCALE
-                ): vol.Any(
-                    cv.schema_with_slug_keys(
-                        value_schema=power_scale_factor_schema,
-                        slug_validator=validate_minute_key,
+            vol.Optional(CONF_PRECISION): vol.In(
+                [PRECISION_TENTHS, PRECISION_HALVES, PRECISION_WHOLE]
+            ),
+            vol.Optional(CONF_TEMP_STEP): vol.In(
+                [PRECISION_TENTHS, PRECISION_HALVES, PRECISION_WHOLE]
+            ),
+            vol.Optional(CONF_UNIQUE_ID): cv.string,
+        },
+    )
+    .extend({vol.Optional(v): vol.Coerce(float) for (k, v) in CONF_PRESETS.items()})
+    .extend(
+        {
+            vol.Optional(CONF_HEAT_LOSS): vol.All(
+                {
+                    vol.Required(CONF_HEAT_LOSS_ENERGY_LOSS): vol.Any(
+                        cv.entity_id, vol.Coerce(float), cv.template
                     ),
-                    # vol.Any(cv.positive_float, power_scale_factor_schema),
+                    vol.Required(CONF_HEAT_LOSS_ENERGY_INPUT): vol.Any(
+                        cv.entity_id, vol.Coerce(float), cv.template
+                    ),
+                    # vol.Optional(CONF_HEAT_LOSS_PERIOD): cv.positive_time_period,
+                    # vol.Optional(CONF_HEAT_LOSS_CONTRIBUTION): vol.Any(
+                    #     cv.entity_id, vol.Coerce(float), cv.template
+                    # ),
+                    vol.Optional(
+                        CONF_HEAT_LOSS_SCALE_FACTORS
+                    ): cv.schema_with_slug_keys(
+                        value_schema=cv.positive_float,
+                        slug_validator=validate_heat_loss_scale_factors,
+                    ),
+                },
+                check_main_secondary(
+                    [CONF_HEAT_LOSS_ENERGY_LOSS, CONF_HEAT_LOSS_ENERGY_INPUT],
+                    [
+                        # CONF_HEAT_LOSS_PERIOD,
+                        # CONF_HEAT_LOSS_CONTRIBUTION
+                        CONF_HEAT_LOSS_SCALE_FACTORS
+                    ],
                 ),
-            },
-            require_power_limits_if_sensor_defined,
-        )
-    }
+            ),
+        }
+    )
+    .extend(
+        {
+            vol.Optional(CONF_POWER_LIMIT): vol.All(
+                {
+                    vol.Required(CONF_POWER_INPUT): vol.Any(cv.entity_id, cv.template),
+                    vol.Optional(CONF_WANTED_POWER_LIMIT): vol.Any(
+                        cv.positive_float, cv.entity_id, cv.template
+                    ),
+                    vol.Optional(
+                        CONF_WANTED_LIMIT_DELAY, default=timedelta(minutes=2)
+                    ): cv.positive_time_period,
+                    # vol.Optional(CONF_POWER_LIMIT_PERIOD): cv.positive_time_period,
+                    vol.Optional(CONF_ABSOLUTE_POWER_LIMIT): vol.Any(
+                        cv.positive_float, cv.entity_id, cv.template
+                    ),
+                    vol.Optional(
+                        CONF_ABSOLUTE_POWER_LIMIT_DELAY, default=timedelta(seconds=30)
+                    ): cv.positive_time_period,
+                    # vol.Optional(CONF_POWER_LIMIT_NOTIFICATION): cv.SERVICE_SCHEMA,
+                    vol.Optional(
+                        CONF_POWER_LIMIT_SCALE_FACTORS, default=HEAT_LOSS_DEFAULT_SCALE
+                    ): vol.Any(
+                        cv.schema_with_slug_keys(
+                            value_schema=power_scale_factor_schema,
+                            slug_validator=validate_minute_key,
+                        ),
+                        # vol.Any(cv.positive_float, power_scale_factor_schema),
+                    ),
+                },
+                require_power_limits_if_sensor_defined,
+            )
+        }
+    )
 )
 
 
