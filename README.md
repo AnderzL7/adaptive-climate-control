@@ -5,10 +5,6 @@
 [![License][license-shield]](LICENSE)
 
 ![Project Maintenance][maintenance-shield]
-[![BuyMeCoffee][buymecoffeebadge]][buymecoffee]
-
-[![Discord][discord-shield]][discord]
-[![Community Forum][forum-shield]][forum]
 
 _Integration to integrate with [climate_heat_loss][climate_heat_loss]._
 
@@ -41,16 +37,9 @@ If you want to contribute to this please read the [Contribution guidelines](CONT
 ***
 
 [climate_heat_loss]: https://github.com/AnderzL7/climate_heat_loss
-[buymecoffee]: https://www.buymeacoffee.com/ludeeus
-[buymecoffeebadge]: https://img.shields.io/badge/buy%20me%20a%20coffee-donate-yellow.svg?style=for-the-badge
 [commits-shield]: https://img.shields.io/github/commit-activity/y/AnderzL7/climate_heat_loss.svg?style=for-the-badge
 [commits]: https://github.com/AnderzL7/climate_heat_loss/commits/main
-[discord]: https://discord.gg/Qa5fW2R
-[discord-shield]: https://img.shields.io/discord/330944238910963714.svg?style=for-the-badge
-[exampleimg]: example.png
-[forum-shield]: https://img.shields.io/badge/community-forum-brightgreen.svg?style=for-the-badge
-[forum]: https://community.home-assistant.io/
 [license-shield]: https://img.shields.io/github/license/AnderzL7/climate_heat_loss.svg?style=for-the-badge
-[maintenance-shield]: https://img.shields.io/badge/maintainer-Joakim%20Sørensen%20%40ludeeus-blue.svg?style=for-the-badge
+[maintenance-shield]: https://img.shields.io/badge/maintainer-Anders%20Lund%20%40AnderzL7-blue.svg?style=for-the-badge
 [releases-shield]: https://img.shields.io/github/release/AnderzL7/climate_heat_loss.svg?style=for-the-badge
 [releases]: https://github.com/AnderzL7/climate_heat_loss/releases
