@@ -6,3 +6,82 @@ logger:
   default: info
   logs:
     custom_components.climate_heat_loss: debug
+
+input_number:
+  temp_sensor:
+    name: Temp sensor
+    initial: 22
+    min: 16
+    max: 28
+    step: 0.1
+    mode: box
+  total_power:
+    name: Total power
+    initial: 1000
+    min: 0
+    max: 10000
+    step: 100
+    mode: box
+  heat_loss_energy_input:
+    name: Heat loss energy input
+    initial: 0
+    min: 0
+    max: 3000
+    step: 10
+    mode: box
+
+input_boolean:
+  climate_switch:
+    name: Climate switch
+
+climate:
+  - platform: climate_heat_loss
+    heater: input_boolean.climate_switch
+    target_sensor: input_number.temp_sensor
+    power_limit:
+      power_input: input_number.total_power
+      wanted_power_limit: 1850
+      absolute_power_limit: 1900
+      power_limit_scale_factors:
+        "0":
+          turn_on: 1
+          turn_off: 1.3
+        "5":
+          turn_on: 0.7
+          turn_off: 1.26
+        "6":
+          turn_on: 0.65
+          turn_off: 1.25
+        "15":
+          turn_on: 0.725
+          turn_off: 1.2
+        "30":
+          turn_on: 0.85
+          turn_off: 1.1
+        "45":
+          turn_on: 0.975
+          turn_off: 1
+    heat_loss:
+      energy_loss: sensor.heat_loss
+      energy_input: input_number.heat_loss_energy_input
+      energy_store_scale_factors:
+        hot_tolerance: 0.5
+        current_temp: 1
+        cold_tolerance: 2
+
+template:
+  - sensor:
+      - name: "Heat loss"
+        state: >
+          {% set therm_cond = 0.9 %}
+          {% set area = 2.4 * 5.1 %}
+          {% set temp_diff = states('input_number.temp_sensor') | float - state_attr('weather.forecast_hjem','temperature') | float %}
+          {% set thickness = 0.2 %}
+          {% set heat_loss = therm_cond * area * (temp_diff / thickness) %}
+          {{ heat_loss }}
+        unit_of_measurement: "W"
+
+# thermal conductivity of the wall in W/m * C
+# area of the wall in m^2
+# temperature difference in C
+# thickness of the wall in m
