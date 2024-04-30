@@ -7,7 +7,6 @@ https://github.com/AnderzL7/climate_heat_loss
 from __future__ import annotations
 
 import asyncio
-from curses.ascii import isdigit
 from datetime import datetime, timedelta
 import math
 from typing import Any
@@ -112,7 +111,8 @@ from .const import PLATFORMS, DOMAIN, LOGGER as _LOGGER
 class ClimateActionState(StrEnum):
     """Enum that represents climate action states.
 
-    For example used to force the heater to turn off when surpassing a power limit."""
+    For example used to force the heater to turn off when surpassing a power limit.
+    """
 
     ON = "turn_on"
     OFF = "turn_off"
