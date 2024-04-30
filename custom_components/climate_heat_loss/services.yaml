@@ -1,3 +1,2 @@
 reload:
-  - name: Reload Climate Heat Loss
-    description: Reload all Climate with heat loss calculation entities
+  description: Reload all Climate with heat loss calculation entities
