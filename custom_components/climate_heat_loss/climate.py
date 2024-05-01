@@ -846,7 +846,7 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
         """Get the value from a template, a string or a float and return as float."""
         if isinstance(value, Template) and value.ensure_valid:
             new_value = value.async_render()
-            if not isinstance(new_value, (str, int, float)):
+            if not isinstance(new_value, str | int | float):
                 _LOGGER.error(
                     "Invalid template value: %s, expected string or float", new_value
                 )
