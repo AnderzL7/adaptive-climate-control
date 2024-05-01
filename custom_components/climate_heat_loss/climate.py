@@ -1054,7 +1054,7 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
         old_still_valid = self._heat_loss_current_state_since is not None and (
             self._heat_loss_current_state_since.timestamp()
             + self._heat_loss_delay.total_seconds()
-            < datetime.now().timestamp()
+            > datetime.now().timestamp()
         )
         old_state = self._heat_loss_heater_state
 
