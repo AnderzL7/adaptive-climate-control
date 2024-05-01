@@ -1107,9 +1107,11 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
                 and not old_still_valid
             ):
                 _LOGGER.debug(
-                    "Setting heat_loss_state to ON. Old state: %s, old_still_valid: %s, heat_loss_idle_since(seconds since): %s",
+                    "Setting heat_loss_state to ON. Old state: %s, old_still_valid: %s, current_state_since(seconds since): %s, heat_loss_too_cold_since(seconds since): %s",
                     old_state,
                     old_still_valid,
+                    datetime.now().timestamp()
+                    - self._heat_loss_current_state_since.timestamp(),
                     datetime.now().timestamp()
                     - self._heat_loss_too_cold_since.timestamp(),
                 )
@@ -1139,9 +1141,11 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
                 and not old_still_valid
             ):
                 _LOGGER.debug(
-                    "Setting heat_loss_state to OFF. Old state: %s, old_still_valid: %s, heat_loss_idle_since(seconds since): %s",
+                    "Setting heat_loss_state to OFF. Old state: %s, old_still_valid: %s, current_state_since(seconds since): %s, heat_loss_too_hot_since(seconds since): %s",
                     old_state,
                     old_still_valid,
+                    datetime.now().timestamp()
+                    - self._heat_loss_current_state_since.timestamp(),
                     datetime.now().timestamp()
                     - self._heat_loss_too_hot_since.timestamp(),
                 )
@@ -1173,9 +1177,11 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
                 )
             ):
                 _LOGGER.debug(
-                    "Setting heat_loss_state to IDLE. Old state: %s, old_still_valid: %s, heat_loss_idle_since(seconds since): %s",
+                    "Setting heat_loss_state to IDLE. Old state: %s, old_still_valid: %s, current_state_since(seconds since): %s, heat_loss_idle_since(seconds since): %s",
                     old_state,
                     old_still_valid,
+                    datetime.now().timestamp()
+                    - self._heat_loss_current_state_since.timestamp(),
                     datetime.now().timestamp() - self._heat_loss_idle_since.timestamp(),
                 )
                 self._heat_loss_heater_state = ClimateActionState.IDLE
