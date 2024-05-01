@@ -861,11 +861,14 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
             )
             return None
 
-        if isinstance(new_value, str) and not new_value.isdigit():
-            _LOGGER.error(
-                "Rendered template value is not a digit string: %s", new_value
-            )
-            return None
+        if isinstance(new_value, str):
+            try:
+                new_value = float(new_value)
+            except ValueError:
+                _LOGGER.error(
+                    "Rendered template value is not a float string: %s", new_value
+                )
+                return None
 
         if not isinstance(new_value, float):
             new_value = float(new_value)
