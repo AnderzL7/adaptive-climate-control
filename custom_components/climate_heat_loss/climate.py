@@ -842,20 +842,32 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
             upper - lower
         )
 
-    async def _get_value_from_template_str_float(
-        self, value: str | Template | float
-    ) -> float:
+    async def _get_value_from_template_str_float(self, value: str | Template | float):
         """Get the value from a template, a string or a float and return as float."""
         if isinstance(value, Template) and value.ensure_valid:
-            new_value: float = value.async_render(parse_result=False)
-        elif isinstance(value, str) and not value.isdigit():
+            new_value = value.async_render()
+            if not isinstance(new_value, (str, int, float)):
+                _LOGGER.error(
+                    "Invalid template value: %s, expected string or float", new_value
+                )
+                return None
+        elif isinstance(value, str) and cv.entity_id(value):
             new_value = self.hass.states.get(value).state
-        elif isinstance(value, int) or isinstance(value, float):
+        elif isinstance(value, float):
             new_value = value
         else:
-            raise ValueError("Invalid value. Expected str, int, float or Template")
+            _LOGGER.error(
+                "Invalid value: %s, expected template, string or float", value
+            )
+            return None
 
-        if isinstance(new_value, str):
+        if isinstance(new_value, str) and not new_value.isdigit():
+            _LOGGER.error(
+                "Rendered template value is not a digit string: %s", new_value
+            )
+            return None
+
+        if not isinstance(new_value, float):
             new_value = float(new_value)
 
         return new_value
@@ -930,6 +942,9 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
         power_scale_factor = self._get_current_power_scale()
         power_input = await self._get_value_from_template_str_float(self._power_input)
 
+        if power_input is None:
+            return
+
         wanted_power_state: ClimateActionState | None = None
         absolute_power_state: ClimateActionState | None = None
 
@@ -937,19 +952,20 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
             wanted_power_limit = await self._get_value_from_template_str_float(
                 self._wanted_power_limit
             )
-
-            wanted_power_state = self._get_wanted_power_limit_state(
-                power_input, power_scale_factor, wanted_power_limit
-            )
+            if wanted_power_limit is not None:
+                wanted_power_state = self._get_wanted_power_limit_state(
+                    power_input, power_scale_factor, wanted_power_limit
+                )
 
         if self._absolute_power_limit is not None:
             absolute_power_limit = await self._get_value_from_template_str_float(
                 self._absolute_power_limit
             )
 
-            absolute_power_state = self._get_absolute_power_limit_state(
-                power_input, power_scale_factor, absolute_power_limit
-            )
+            if absolute_power_limit is not None:
+                absolute_power_state = self._get_absolute_power_limit_state(
+                    power_input, power_scale_factor, absolute_power_limit
+                )
 
         if wanted_power_state == ClimateActionState.OFF:
             self._power_limit_heater_state = ClimateActionState.OFF
@@ -970,6 +986,10 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
 
     def calculate_scale_factor(self):
         """Calculate the scale factor based on the current temperature."""
+
+        if self._target_temp is None or self._cur_temp is None:
+            return 1.0
+
         hot_tolerance_factor = self._heat_loss_energy_store_scale_factors.get(
             "hot_tolerance", 1.0
         )
@@ -979,6 +999,9 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
         cold_tolerance_factor = self._heat_loss_energy_store_scale_factors.get(
             "cold_tolerance", 1.0
         )
+
+        if hot_tolerance_factor == current_temp_factor == cold_tolerance_factor:
+            return hot_tolerance_factor
 
         temp_scale_lower = self._cur_temp - self._cold_tolerance
         temp_scale_middle = self._cur_temp
@@ -1011,8 +1034,8 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
 
     async def _async_apply_heat_loss_state(self) -> None:
         """Apply the heat loss state."""
-        if self._heat_loss_energy_loss is None and self._heat_loss_energy_input is None:
-            _LOGGER.debug("No heat loss or energy input defined")
+        if self._heat_loss_energy_loss is None or self._heat_loss_energy_input is None:
+            _LOGGER.debug("Heat loss energy loss or energy input is None")
             self._heat_loss_heater_state = ClimateActionState.IDLE
             return
 
@@ -1028,6 +1051,14 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
         energy_input = await self._get_value_from_template_str_float(
             self._heat_loss_energy_input
         )
+
+        if energy_loss is None or energy_input is None:
+            _LOGGER.debug(
+                "Calculated energy loss or energy input is None. Energy loss: %s, Energy input: %s",
+                energy_loss,
+                energy_input,
+            )
+            return
 
         scale_factor = self.calculate_scale_factor()
 
