@@ -394,7 +394,7 @@ async def async_setup_platform(
         heat_loss_energy_loss: float | str | Template | None = heat_loss.get(
             CONF_HEAT_LOSS_ENERGY_LOSS
         )
-        heat_loss_delay: timedelta
+        heat_loss_delay: timedelta = (heat_loss.get(CONF_HEAT_LOSS_DELAY),)
         heat_loss_energy_input: float | str | Template | None = heat_loss.get(
             CONF_HEAT_LOSS_ENERGY_INPUT
         )
