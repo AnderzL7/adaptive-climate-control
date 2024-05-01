@@ -44,10 +44,9 @@ CONF_TEMP_STEP: Final = "target_temp_step"
 # Power peak control configuration keys
 CONF_POWER_LIMIT: Final = "power_limit"
 CONF_POWER_INPUT: Final = "power_input"
-CONF_WANTED_LIMIT_DELAY: Final = "wanted_limit_delay"
 CONF_WANTED_POWER_LIMIT: Final = "wanted_power_limit"
 CONF_ABSOLUTE_POWER_LIMIT: Final = "absolute_power_limit"
-CONF_ABSOLUTE_POWER_LIMIT_DELAY: Final = "absolute_power_limit_delay"
+CONF_POWER_LIMIT_DELAY: Final = "delay"
 # CONF_POWER_LIMIT_NOTIFICATION: Final = "_power_limit_notification"
 CONF_POWER_LIMIT_SCALE_FACTORS: Final = "power_limit_scale_factors"
 

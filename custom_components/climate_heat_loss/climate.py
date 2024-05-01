@@ -86,9 +86,8 @@ from .const import (
     CONF_POWER_LIMIT,
     CONF_POWER_INPUT,
     CONF_WANTED_POWER_LIMIT,
-    CONF_WANTED_LIMIT_DELAY,
     CONF_ABSOLUTE_POWER_LIMIT,
-    CONF_ABSOLUTE_POWER_LIMIT_DELAY,
+    CONF_POWER_LIMIT_DELAY,
     # CONF_POWER_LIMIT_NOTIFICATION,
     CONF_POWER_LIMIT_SCALE_FACTORS,
     CONF_HEAT_LOSS,
@@ -148,22 +147,29 @@ class PowerLimitScaleKey(StrEnum):
 
     TURN_OFF = "turn_off"
     TURN_ON = "turn_on"
+    TURN_OFF_DELAY = "turn_off_delay"
+    TURN_ON_DELAY = "turn_on_delay"
 
 
-def validate_turn_off_on_key(key):
-    """Validate the turn off/on key."""
+def validate_power_limit_scale_key(key):
+    """Validate the power limit scale key."""
     # Ensure the key is a string
     if not isinstance(key, str):
         raise vol.Invalid("Key must be a string")
-    if key not in [PowerLimitScaleKey.TURN_OFF, PowerLimitScaleKey.TURN_ON]:
+    if key not in [
+        PowerLimitScaleKey.TURN_OFF,
+        PowerLimitScaleKey.TURN_ON,
+        PowerLimitScaleKey.TURN_OFF_DELAY,
+        PowerLimitScaleKey.TURN_ON_DELAY,
+    ]:
         raise vol.Invalid(
-            f"Key must be either '{PowerLimitScaleKey.TURN_OFF}' or '{PowerLimitScaleKey.TURN_ON}'"
+            f"Key must be either '{PowerLimitScaleKey.TURN_OFF}', '{PowerLimitScaleKey.TURN_ON}', '{PowerLimitScaleKey.TURN_OFF_DELAY}' or '{PowerLimitScaleKey.TURN_ON_DELAY}'"
         )
     return key
 
 
 power_scale_factor_schema = cv.schema_with_slug_keys(
-    value_schema=cv.positive_float, slug_validator=validate_turn_off_on_key
+    value_schema=cv.positive_float, slug_validator=validate_power_limit_scale_key
 )
 
 
@@ -313,15 +319,12 @@ PLATFORM_SCHEMA = (
                     vol.Optional(CONF_WANTED_POWER_LIMIT): vol.Any(
                         cv.positive_float, cv.entity_id, cv.template
                     ),
-                    vol.Optional(
-                        CONF_WANTED_LIMIT_DELAY, default=timedelta(minutes=2)
-                    ): cv.positive_time_period,
                     # vol.Optional(CONF_POWER_LIMIT_PERIOD): cv.positive_time_period,
                     vol.Optional(CONF_ABSOLUTE_POWER_LIMIT): vol.Any(
                         cv.positive_float, cv.entity_id, cv.template
                     ),
                     vol.Optional(
-                        CONF_ABSOLUTE_POWER_LIMIT_DELAY, default=timedelta(seconds=30)
+                        CONF_POWER_LIMIT_DELAY, default=timedelta(minutes=2)
                     ): cv.positive_time_period,
                     # vol.Optional(CONF_POWER_LIMIT_NOTIFICATION): cv.SERVICE_SCHEMA,
                     vol.Optional(
@@ -377,13 +380,10 @@ async def async_setup_platform(
         wanted_power_limit: float | str | Template | None = power_limit.get(
             CONF_WANTED_POWER_LIMIT
         )
-        wanted_limit_delay: timedelta | None = power_limit.get(CONF_WANTED_LIMIT_DELAY)
         absolute_power_limit: float | str | Template | None = power_limit.get(
             CONF_ABSOLUTE_POWER_LIMIT
         )
-        absolute_limit_delay: timedelta | None = power_limit.get(
-            CONF_ABSOLUTE_POWER_LIMIT_DELAY
-        )
+        power_limit_delay: timedelta = power_limit.get(CONF_POWER_LIMIT_DELAY)
         # power_limit_notification: dict | None = config.get(CONF_POWER_LIMIT_NOTIFICATION)
         power_limit_scale_factors: dict[str, dict[str, float]] | None = power_limit.get(
             CONF_POWER_LIMIT_SCALE_FACTORS
@@ -428,11 +428,10 @@ async def async_setup_platform(
                 unique_id,
                 power_input,
                 wanted_power_limit,
-                wanted_limit_delay,
                 absolute_power_limit,
-                absolute_limit_delay,
-                # power_limit_notification,
+                power_limit_delay,
                 power_limit_scale_factors,
+                # power_limit_notification,
                 heat_loss_energy_loss,
                 heat_loss_energy_input,
                 heat_loss_delay,
@@ -471,11 +470,10 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
         unique_id: str | None,
         power_input: str | Template | None,
         wanted_power_limit: float | str | Template | None,
-        wanted_limit_delay: timedelta | None,
         absolute_power_limit: float | str | Template | None,
-        absolute_limit_delay: timedelta | None,
-        # power_limit_notification: IDK,
+        power_limit_delay: timedelta,
         power_limit_scale_factors: dict[str, dict[str, float]] | None,
+        # power_limit_notification: IDK,
         heat_loss_energy_loss: float | str | Template | None,
         heat_loss_energy_input: float | str | Template | None,
         heat_loss_delay: timedelta,
@@ -535,9 +533,8 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
 
         self._power_input = power_input
         self._wanted_power_limit = wanted_power_limit
-        self._wanted_limit_delay = wanted_limit_delay
         self._absolute_power_limit = absolute_power_limit
-        self._absolute_limit_delay = absolute_limit_delay
+        self._power_limit_delay = power_limit_delay
         self._power_limit_scale_factors = power_limit_scale_factors
 
         self._heat_loss_energy_loss = heat_loss_energy_loss
@@ -808,27 +805,18 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
             )
         self.async_write_ha_state()
 
-    def _get_current_power_scale(self) -> float:
-        """Get the current power scale factor."""
+    def _get_current_lower_upper_scale_keys(self) -> tuple[int | None, int | None]:
+        """Get the current lower and upper scale keys."""
         if self._power_limit_scale_factors is None:
-            return 1.0
+            return None, None
         minute = datetime.now().minute
 
-        if self._is_device_active:
-            onOffKey = PowerLimitScaleKey.TURN_OFF
-        else:
-            onOffKey = PowerLimitScaleKey.TURN_ON
-        # If minute is equal to a key in the scale factors, return the value
-        # Otherwise, take the weighted average of the two closest keys
         if str(minute) in self._power_limit_scale_factors:
-            return self._power_limit_scale_factors[str(minute)][onOffKey]
-        keys = sorted([int(k) for k in self._power_limit_scale_factors])
+            return minute, None
+        keys = sorted([int(k) for k in self._power_limit_scale_factors if k.isdigit()])
 
-        # Find the two closest keys
-        upper = None
         lower = None
-        lowerValue = None
-        upperValue = None
+        upper = None
 
         for k in keys:
             if k > minute:
@@ -837,13 +825,33 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
             else:
                 lower = k
 
+        return lower, upper
+
+    def _get_current_power_limit_scale_value(
+        self, lower: int | None, upper: int | None, scale_key: PowerLimitScaleKey
+    ) -> float:
+        """Get the current power scale factor."""
         if lower is None and upper is None:
             return 1.0
+        minute = datetime.now().minute
 
-        if lower is not None:
-            lowerValue = self._power_limit_scale_factors[str(lower)][onOffKey]
-        if upper is not None:
-            upperValue = self._power_limit_scale_factors[str(upper)][onOffKey]
+        scale_dict = self._power_limit_scale_factors
+
+        lowerValue = None
+        upperValue = None
+
+        if (
+            lower is not None
+            and str(lower) in scale_dict
+            and scale_key in scale_dict[str(lower)]
+        ):
+            lowerValue = scale_dict[str(lower)][scale_key]
+        if (
+            upper is not None
+            and str(upper) in scale_dict
+            and scale_key in scale_dict[str(upper)]
+        ):
+            upperValue = scale_dict[str(upper)][scale_key]
 
         if lowerValue is None and upperValue is None:
             return 1.0
@@ -894,7 +902,11 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
         return new_value
 
     def _get_absolute_power_limit_state(
-        self, power_input: float, power_scale_factor: float, absolute_power_limit: float
+        self,
+        power_input: float,
+        power_scale_factor: float,
+        absolute_power_limit: float,
+        delay_scale_factor: float,
     ) -> ClimateActionState | None:
         """Get the state of the absolute power limit."""
         if self._is_device_active:
@@ -903,7 +915,7 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
                     self._absolute_power_limit_off_since = datetime.now()
                 if (
                     self._absolute_power_limit_off_since.timestamp()
-                    + self._absolute_limit_delay.total_seconds()
+                    + (self._power_limit_delay.total_seconds() * delay_scale_factor)
                     < datetime.now().timestamp()
                 ):
                     return ClimateActionState.OFF
@@ -916,7 +928,7 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
                     self._absolute_power_limit_idle_since = datetime.now()
                 if (
                     self._absolute_power_limit_idle_since.timestamp()
-                    + self._absolute_limit_delay.total_seconds()
+                    + (self._power_limit_delay.total_seconds() * delay_scale_factor)
                     < datetime.now().timestamp()
                 ):
                     return ClimateActionState.IDLE
@@ -925,7 +937,11 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
                     self._absolute_power_limit_idle_since = None
 
     def _get_wanted_power_limit_state(
-        self, power_input: float, power_scale_factor: float, wanted_power_limit: float
+        self,
+        power_input: float,
+        power_scale_factor: float,
+        wanted_power_limit: float,
+        delay_scale_factor: float,
     ) -> ClimateActionState | None:
         if self._is_device_active:
             if power_input * power_scale_factor > wanted_power_limit:
@@ -933,7 +949,7 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
                     self._wanted_power_limit_off_since = datetime.now()
                 if (
                     self._wanted_power_limit_off_since.timestamp()
-                    + self._wanted_limit_delay.total_seconds()
+                    + (self._power_limit_delay.total_seconds() * delay_scale_factor)
                     < datetime.now().timestamp()
                 ):
                     return ClimateActionState.OFF
@@ -945,7 +961,7 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
                     self._wanted_power_limit_idle_since = datetime.now()
                 if (
                     self._wanted_power_limit_idle_since.timestamp()
-                    + self._wanted_limit_delay.total_seconds()
+                    + (self._power_limit_delay.total_seconds() * delay_scale_factor)
                     < datetime.now().timestamp()
                 ):
                     return ClimateActionState.IDLE
@@ -960,7 +976,21 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
             self._power_limit_heater_state = ClimateActionState.IDLE
             return
 
-        power_scale_factor = self._get_current_power_scale()
+        if self._is_device_active:
+            power_scale_key = PowerLimitScaleKey.TURN_OFF
+            delay_scale_key = PowerLimitScaleKey.TURN_OFF_DELAY
+        else:
+            power_scale_key = PowerLimitScaleKey.TURN_ON
+            delay_scale_key = PowerLimitScaleKey.TURN_ON_DELAY
+
+        lower, upper = self._get_current_lower_upper_scale_keys()
+        power_scale_factor = self._get_current_power_limit_scale_value(
+            lower, upper, power_scale_key
+        )
+        delay_scale_factor = self._get_current_power_limit_scale_value(
+            lower, upper, delay_scale_key
+        )
+
         power_input = await self._get_value_from_template_str_float(self._power_input)
 
         if power_input is None:
@@ -975,7 +1005,10 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
             )
             if wanted_power_limit is not None:
                 wanted_power_state = self._get_wanted_power_limit_state(
-                    power_input, power_scale_factor, wanted_power_limit
+                    power_input,
+                    power_scale_factor,
+                    wanted_power_limit,
+                    delay_scale_factor,
                 )
 
         if self._absolute_power_limit is not None:
@@ -985,7 +1018,10 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
 
             if absolute_power_limit is not None:
                 absolute_power_state = self._get_absolute_power_limit_state(
-                    power_input, power_scale_factor, absolute_power_limit
+                    power_input,
+                    power_scale_factor,
+                    absolute_power_limit,
+                    delay_scale_factor,
                 )
 
         if wanted_power_state == ClimateActionState.OFF:
@@ -1091,6 +1127,12 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
 
         scaled_energy_input = energy_input * scale_factor
 
+        current_state_since = (
+            datetime.now().timestamp() - self._heat_loss_current_state_since.timestamp()
+            if self._heat_loss_current_state_since is not None
+            else None
+        )
+
         _LOGGER.debug(
             "Energy loss: %s, Energy input: %s, Scale factor: %s, Within tolerance: %s, energy_input * scale_factor: %s",
             energy_loss,
@@ -1103,6 +1145,11 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
         if energy_input * scale_factor < energy_loss and within_tolerance:
             self._heat_loss_too_hot_since = None
             self._heat_loss_idle_since = None
+            too_cold_since = (
+                datetime.now().timestamp() - self._heat_loss_too_cold_since.timestamp()
+                if self._heat_loss_too_cold_since is not None
+                else None
+            )
             if self._heat_loss_too_cold_since is None:
                 _LOGGER.debug("Setting heat_loss_too_cold_since to now")
                 self._heat_loss_too_cold_since = datetime.now()
@@ -1115,19 +1162,12 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
                 )
                 and not old_still_valid
             ):
-                current_state_since = (
-                    datetime.now().timestamp()
-                    - self._heat_loss_current_state_since.timestamp()
-                    if self._heat_loss_current_state_since is not None
-                    else None
-                )
                 _LOGGER.debug(
                     "Setting heat_loss_state to ON. Old state: %s, old_still_valid: %s, current_state_since(seconds since): %s, heat_loss_too_cold_since(seconds since): %s",
                     old_state,
                     old_still_valid,
                     current_state_since,
-                    datetime.now().timestamp()
-                    - self._heat_loss_too_cold_since.timestamp(),
+                    too_cold_since,
                 )
                 self._heat_loss_heater_state = ClimateActionState.ON
                 self._heat_loss_current_state_since = datetime.now()
@@ -1142,6 +1182,12 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
         elif energy_input * scale_factor > energy_loss and within_tolerance:
             self._heat_loss_too_cold_since = None
             self._heat_loss_idle_since = None
+            too_hot_since = (
+                datetime.now().timestamp() - self._heat_loss_too_hot_since.timestamp()
+                if self._heat_loss_too_hot_since is not None
+                else None
+            )
+
             if self._heat_loss_too_hot_since is None:
                 _LOGGER.debug("Setting heat_loss_too_hot_since to now")
                 self._heat_loss_too_hot_since = datetime.now()
@@ -1154,19 +1200,12 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
                 )
                 and not old_still_valid
             ):
-                current_state_since = (
-                    datetime.now().timestamp()
-                    - self._heat_loss_current_state_since.timestamp()
-                    if self._heat_loss_current_state_since is not None
-                    else None
-                )
                 _LOGGER.debug(
                     "Setting heat_loss_state to OFF. Old state: %s, old_still_valid: %s, current_state_since(seconds since): %s, heat_loss_too_hot_since(seconds since): %s",
                     old_state,
                     old_still_valid,
                     current_state_since,
-                    datetime.now().timestamp()
-                    - self._heat_loss_too_hot_since.timestamp(),
+                    too_hot_since,
                 )
                 self._heat_loss_heater_state = ClimateActionState.OFF
                 self._heat_loss_current_state_since = datetime.now()
@@ -1175,12 +1214,17 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
                     "Not setting heat_loss_state to OFF. Old state: %s, old_still_valid: %s, heat_loss_too_hot_since(seconds since): %s",
                     old_state,
                     old_still_valid,
-                    datetime.now().timestamp()
-                    - self._heat_loss_too_hot_since.timestamp(),
+                    too_hot_since,
                 )
         else:
             self._heat_loss_too_cold_since = None
             self._heat_loss_too_hot_since = None
+            idle_since = (
+                datetime.now().timestamp() - self._heat_loss_idle_since.timestamp()
+                if self._heat_loss_idle_since is not None
+                else None
+            )
+
             if self._heat_loss_idle_since is None and within_tolerance:
                 _LOGGER.debug("Setting heat_loss_idle_since to now")
                 self._heat_loss_idle_since = datetime.now()
@@ -1195,18 +1239,12 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
                     and not old_still_valid
                 )
             ):
-                current_state_since = (
-                    datetime.now().timestamp()
-                    - self._heat_loss_current_state_since.timestamp()
-                    if self._heat_loss_current_state_since is not None
-                    else None
-                )
                 _LOGGER.debug(
                     "Setting heat_loss_state to IDLE. Old state: %s, old_still_valid: %s, current_state_since(seconds since): %s, heat_loss_idle_since(seconds since): %s",
                     old_state,
                     old_still_valid,
                     current_state_since,
-                    datetime.now().timestamp() - self._heat_loss_idle_since.timestamp(),
+                    idle_since,
                 )
                 self._heat_loss_heater_state = ClimateActionState.IDLE
                 self._heat_loss_current_state_since = datetime.now()
@@ -1215,7 +1253,7 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
                     "Not setting heat_loss_state to IDLE. Old state: %s, old_still_valid: %s, heat_loss_idle_since(seconds since): %s",
                     old_state,
                     old_still_valid,
-                    datetime.now().timestamp() - self._heat_loss_idle_since.timestamp(),
+                    idle_since,
                 )
 
     async def _async_control_heating(
