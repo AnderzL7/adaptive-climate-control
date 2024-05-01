@@ -94,6 +94,7 @@ from .const import (
     CONF_HEAT_LOSS,
     CONF_HEAT_LOSS_ENERGY_LOSS,
     CONF_HEAT_LOSS_ENERGY_INPUT,
+    CONF_HEAT_LOSS_DELAY,
     # CONF_HEAT_LOSS_PERIOD,
     # CONF_HEAT_LOSS_CONTRIBUTION,
     CONF_HEAT_LOSS_SCALE_FACTORS,
@@ -283,6 +284,9 @@ PLATFORM_SCHEMA = (
                     #     cv.entity_id, vol.Coerce(float), cv.template
                     # ),
                     vol.Optional(
+                        CONF_HEAT_LOSS_DELAY, default=timedelta(minutes=5)
+                    ): cv.positive_time_period,
+                    vol.Optional(
                         CONF_HEAT_LOSS_SCALE_FACTORS
                     ): cv.schema_with_slug_keys(
                         value_schema=cv.positive_float,
@@ -292,9 +296,10 @@ PLATFORM_SCHEMA = (
                 check_main_secondary(
                     [CONF_HEAT_LOSS_ENERGY_LOSS, CONF_HEAT_LOSS_ENERGY_INPUT],
                     [
+                        CONF_HEAT_LOSS_SCALE_FACTORS,
+                        CONF_HEAT_LOSS_DELAY,
                         # CONF_HEAT_LOSS_PERIOD,
-                        # CONF_HEAT_LOSS_CONTRIBUTION
-                        CONF_HEAT_LOSS_SCALE_FACTORS
+                        # CONF_HEAT_LOSS_CONTRIBUTION,
                     ],
                 ),
             ),
@@ -389,6 +394,7 @@ async def async_setup_platform(
         heat_loss_energy_loss: float | str | Template | None = heat_loss.get(
             CONF_HEAT_LOSS_ENERGY_LOSS
         )
+        heat_loss_delay: timedelta
         heat_loss_energy_input: float | str | Template | None = heat_loss.get(
             CONF_HEAT_LOSS_ENERGY_INPUT
         )
@@ -429,6 +435,7 @@ async def async_setup_platform(
                 power_limit_scale_factors,
                 heat_loss_energy_loss,
                 heat_loss_energy_input,
+                heat_loss_delay,
                 heat_loss_energy_store_scale_factors,
                 # heat_loss_period,
                 # heat_loss_contribution,
@@ -471,6 +478,7 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
         power_limit_scale_factors: dict[str, dict[str, float]] | None,
         heat_loss_energy_loss: float | str | Template | None,
         heat_loss_energy_input: float | str | Template | None,
+        heat_loss_delay: timedelta,
         heat_loss_energy_store_scale_factors: dict[str, float] | None,
         # heat_loss_period: timedelta | None,
         # heat_loss_contribution: float | str | Template | None,
@@ -534,7 +542,8 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
 
         self._heat_loss_energy_loss = heat_loss_energy_loss
         self._heat_loss_energy_input = heat_loss_energy_input
-        self._heat_loss_delay = timedelta(minutes=2)
+        # self._heat_loss_delay = timedelta(minutes=5)
+        self._heat_loss_delay = heat_loss_delay
         self._heat_loss_energy_store_scale_factors = (
             heat_loss_energy_store_scale_factors
         )
