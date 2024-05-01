@@ -1109,6 +1109,14 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
                 _LOGGER.debug("Setting heat_loss_state to ON")
                 self._heat_loss_heater_state = ClimateActionState.ON
                 self._heat_loss_current_state_since = datetime.now()
+            else:
+                _LOGGER.debug(
+                    "Not setting heat_loss_state to ON. Old state: %s, old_still_valid: %s, heat_loss_too_cold_since(seconds since): %s",
+                    old_state,
+                    old_still_valid,
+                    self._heat_loss_too_cold_since.timestamp()
+                    - datetime.now().timestamp(),
+                )
         elif energy_input * scale_factor > energy_loss and within_tolerance:
             self._heat_loss_too_cold_since = None
             self._heat_loss_idle_since = None
@@ -1127,6 +1135,14 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
                 _LOGGER.debug("Setting heat_loss_state to OFF")
                 self._heat_loss_heater_state = ClimateActionState.OFF
                 self._heat_loss_current_state_since = datetime.now()
+            else:
+                _LOGGER.debug(
+                    "Not setting heat_loss_state to OFF. Old state: %s, old_still_valid: %s, heat_loss_too_hot_since(seconds since): %s",
+                    old_state,
+                    old_still_valid,
+                    self._heat_loss_too_hot_since.timestamp()
+                    - datetime.now().timestamp(),
+                )
         else:
             self._heat_loss_too_cold_since = None
             self._heat_loss_too_hot_since = None
@@ -1137,7 +1153,8 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
                 old_state != ClimateActionState.IDLE
                 and not within_tolerance
                 or (
-                    self._heat_loss_idle_since.timestamp()
+                    self._heat_loss_idle_since is not None
+                    and self._heat_loss_idle_since.timestamp()
                     + (self._heat_loss_delay.microseconds / 1e6)
                     < datetime.now().timestamp()
                     and not old_still_valid
@@ -1146,6 +1163,13 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
                 _LOGGER.debug("Setting heat_loss_state to IDLE")
                 self._heat_loss_heater_state = ClimateActionState.IDLE
                 self._heat_loss_current_state_since = datetime.now()
+            else:
+                _LOGGER.debug(
+                    "Not setting heat_loss_state to IDLE. Old state: %s, old_still_valid: %s, heat_loss_idle_since(seconds since): %s",
+                    old_state,
+                    old_still_valid,
+                    self._heat_loss_idle_since.timestamp() - datetime.now().timestamp(),
+                )
 
     async def _async_control_heating(
         self,
