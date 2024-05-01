@@ -862,6 +862,8 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
             return None
 
         if isinstance(new_value, str):
+            if new_value.lower() in ["unavailable", "unknown"]:
+                return None
             try:
                 new_value = float(new_value)
             except ValueError:
@@ -1112,14 +1114,15 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
         else:
             self._heat_loss_too_cold_since = None
             self._heat_loss_too_hot_since = None
-            if self._heat_loss_idle_since is None:
+            if self._heat_loss_idle_since is None and within_tolerance:
                 _LOGGER.debug("Setting heat_loss_idle_since to now")
                 self._heat_loss_idle_since = datetime.now()
-            elif (
+            elif not within_tolerance or (
                 self._heat_loss_idle_since.timestamp()
                 + (self._heat_loss_delay.microseconds / 1e6)
                 < datetime.now().timestamp()
-            ) and not old_still_valid:
+                and not old_still_valid
+            ):
                 _LOGGER.debug("Setting heat_loss_state to IDLE")
                 self._heat_loss_heater_state = ClimateActionState.IDLE
                 self._heat_loss_current_state_since = datetime.now()
