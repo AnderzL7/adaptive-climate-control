@@ -1101,7 +1101,7 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
                 old_state != ClimateActionState.ON
                 and (
                     self._heat_loss_too_cold_since.timestamp()
-                    + self._heat_loss_delaytotal_seconds()
+                    + self._heat_loss_delay.total_seconds()
                     < datetime.now().timestamp()
                 )
                 and not old_still_valid
