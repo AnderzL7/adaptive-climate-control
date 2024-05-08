@@ -86,7 +86,6 @@ from .const import (
     CONF_POWER_LIMIT,
     CONF_POWER_INPUT,
     CONF_WANTED_POWER_LIMIT,
-    CONF_ABSOLUTE_POWER_LIMIT,
     CONF_POWER_LIMIT_DELAY,
     # CONF_POWER_LIMIT_NOTIFICATION,
     CONF_POWER_LIMIT_SCALE_FACTORS,
@@ -171,22 +170,6 @@ def validate_power_limit_scale_key(key):
 power_scale_factor_schema = cv.schema_with_slug_keys(
     value_schema=cv.positive_float, slug_validator=validate_power_limit_scale_key
 )
-
-
-def require_power_limits_if_sensor_defined(obj):
-    """Validate that either CONF_WANTED_POWER_LIMIT or CONF_ABSOLUTE_POWER_LIMIT is set if CONF_POWER_SENSOR is set."""
-
-    def validate(obj):
-        if (
-            obj.get(CONF_WANTED_POWER_LIMIT) is None
-            and obj.get(CONF_ABSOLUTE_POWER_LIMIT) is None
-        ):
-            raise vol.Invalid(
-                f"Either {CONF_WANTED_POWER_LIMIT} or {CONF_ABSOLUTE_POWER_LIMIT} must be set when {CONF_POWER_INPUT} is present"
-            )
-        return obj
-
-    return validate(obj)
 
 
 def check_all_or_non(keys):
@@ -316,13 +299,10 @@ PLATFORM_SCHEMA = (
             vol.Optional(CONF_POWER_LIMIT): vol.All(
                 {
                     vol.Required(CONF_POWER_INPUT): vol.Any(cv.entity_id, cv.template),
-                    vol.Optional(CONF_WANTED_POWER_LIMIT): vol.Any(
+                    vol.Required(CONF_WANTED_POWER_LIMIT): vol.Any(
                         cv.positive_float, cv.entity_id, cv.template
                     ),
                     # vol.Optional(CONF_POWER_LIMIT_PERIOD): cv.positive_time_period,
-                    vol.Optional(CONF_ABSOLUTE_POWER_LIMIT): vol.Any(
-                        cv.positive_float, cv.entity_id, cv.template
-                    ),
                     vol.Optional(
                         CONF_POWER_LIMIT_DELAY, default=timedelta(minutes=2)
                     ): cv.positive_time_period,
@@ -337,7 +317,6 @@ PLATFORM_SCHEMA = (
                         # vol.Any(cv.positive_float, power_scale_factor_schema),
                     ),
                 },
-                require_power_limits_if_sensor_defined,
             )
         }
     )
@@ -379,9 +358,6 @@ async def async_setup_platform(
         power_input: str | Template | None = power_limit.get(CONF_POWER_INPUT)
         wanted_power_limit: float | str | Template | None = power_limit.get(
             CONF_WANTED_POWER_LIMIT
-        )
-        absolute_power_limit: float | str | Template | None = power_limit.get(
-            CONF_ABSOLUTE_POWER_LIMIT
         )
         power_limit_delay: timedelta = power_limit.get(CONF_POWER_LIMIT_DELAY)
         # power_limit_notification: dict | None = config.get(CONF_POWER_LIMIT_NOTIFICATION)
@@ -428,7 +404,6 @@ async def async_setup_platform(
                 unique_id,
                 power_input,
                 wanted_power_limit,
-                absolute_power_limit,
                 power_limit_delay,
                 power_limit_scale_factors,
                 # power_limit_notification,
@@ -470,7 +445,6 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
         unique_id: str | None,
         power_input: str | Template | None,
         wanted_power_limit: float | str | Template | None,
-        absolute_power_limit: float | str | Template | None,
         power_limit_delay: timedelta,
         power_limit_scale_factors: dict[str, dict[str, float]] | None,
         # power_limit_notification: IDK,
@@ -524,8 +498,6 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
 
         self._wanted_power_limit_off_since: datetime | None = None
         self._wanted_power_limit_idle_since: datetime | None = None
-        self._absolute_power_limit_off_since: datetime | None = None
-        self._absolute_power_limit_idle_since: datetime | None = None
         self._heat_loss_too_hot_since: datetime | None = None
         self._heat_loss_too_cold_since: datetime | None = None
         self._heat_loss_idle_since: datetime | None = None
@@ -533,7 +505,6 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
 
         self._power_input = power_input
         self._wanted_power_limit = wanted_power_limit
-        self._absolute_power_limit = absolute_power_limit
         self._power_limit_delay = power_limit_delay
         self._power_limit_scale_factors = power_limit_scale_factors
 
@@ -912,35 +883,6 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
 
         return new_value
 
-    def _get_absolute_power_limit_state(
-        self,
-        power_input: float,
-        power_scale_factor: float,
-        absolute_power_limit: float,
-        delay_scale_factor: float,
-    ) -> ClimateActionState | None:
-        """Get the state of the absolute power limit."""
-        if power_input * power_scale_factor > absolute_power_limit:
-            self._absolute_power_limit_idle_since = None
-            if self._absolute_power_limit_off_since is None:
-                self._absolute_power_limit_off_since = datetime.now()
-            elif (
-                self._absolute_power_limit_off_since.timestamp()
-                + (self._power_limit_delay.total_seconds() * delay_scale_factor)
-                < datetime.now().timestamp()
-            ):
-                return ClimateActionState.OFF
-        if power_input * power_scale_factor < absolute_power_limit:
-            self._absolute_power_limit_off_since = None
-            if self._absolute_power_limit_idle_since is None:
-                self._absolute_power_limit_idle_since = datetime.now()
-            elif (
-                self._absolute_power_limit_idle_since.timestamp()
-                + (self._power_limit_delay.total_seconds() * delay_scale_factor)
-                < datetime.now().timestamp()
-            ):
-                return ClimateActionState.IDLE
-
     def _get_wanted_power_limit_state(
         self,
         power_input: float,
@@ -971,9 +913,7 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
 
     async def _async_apply_power_limit_state(self) -> None:
         """Apply the power limit state."""
-        if self._power_input is None or (
-            self._wanted_power_limit is None and self._absolute_power_limit is None
-        ):
+        if self._power_input is None or self._wanted_power_limit is None:
             self._power_limit_heater_state = ClimateActionState.IDLE
             return
 
@@ -998,7 +938,6 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
             return
 
         wanted_power_state: ClimateActionState | None = None
-        absolute_power_state: ClimateActionState | None = None
 
         if self._wanted_power_limit is not None:
             wanted_power_limit = await self._get_value_from_template_str_float(
@@ -1012,33 +951,16 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
                     delay_scale_factor,
                 )
 
-        if self._absolute_power_limit is not None:
-            absolute_power_limit = await self._get_value_from_template_str_float(
-                self._absolute_power_limit
-            )
-
-            if absolute_power_limit is not None:
-                absolute_power_state = self._get_absolute_power_limit_state(
-                    power_input,
-                    power_scale_factor,
-                    absolute_power_limit,
-                    delay_scale_factor,
-                )
-
         if wanted_power_state == ClimateActionState.OFF:
-            self._power_limit_heater_state = ClimateActionState.OFF
-        elif absolute_power_state == ClimateActionState.OFF:
             self._power_limit_heater_state = ClimateActionState.OFF
         elif wanted_power_state in (
             ClimateActionState.IDLE,
             None,
-        ) and absolute_power_state in (ClimateActionState.IDLE, None):
+        ):
             self._power_limit_heater_state = ClimateActionState.IDLE
 
         _LOGGER.debug(
-            "Power limit state: wanted_power_state=%s, absolute_power_state=%s, power_limit_heater_state=%s",
-            wanted_power_state,
-            absolute_power_state,
+            "Power limit state: %s",
             self._power_limit_heater_state,
         )
 
