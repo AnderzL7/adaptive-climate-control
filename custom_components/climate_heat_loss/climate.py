@@ -1333,12 +1333,21 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
             too_cold = self._target_temp >= self._cur_temp + self._cold_tolerance
             too_hot = self._cur_temp >= self._target_temp + self._hot_tolerance
             if self._is_device_active:
-                if self._heat_loss_heater_state == ClimateActionState.OFF or (
-                    ((self.ac_mode and too_cold) or (not self.ac_mode and too_hot))
-                    and self._heat_loss_heater_state != ClimateActionState.ON
-                ):
-                    _LOGGER.info("Turning off heater %s", self.heater_entity_id)
+                if self._heat_loss_heater_state == ClimateActionState.OFF:
+                    _LOGGER.info(
+                        "Turning off heater %s due to heat loss: %s",
+                        self.heater_entity_id,
+                        self._heat_loss_heater_state,
+                    )
                     await self._async_heater_turn_off()
+                elif (self.ac_mode and too_cold) or (not self.ac_mode and too_hot):
+                    if self._heat_loss_heater_state != ClimateActionState.ON:
+                        _LOGGER.info("Turning off heater %s", self.heater_entity_id)
+                        await self._async_heater_turn_off()
+                    else:
+                        _LOGGER.info(
+                            "Heater is forced on due to heat loss, not turning off"
+                        )
                 elif time is not None:
                     # The time argument is passed only in keep-alive case
                     _LOGGER.info(
@@ -1346,12 +1355,21 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
                         self.heater_entity_id,
                     )
                     await self._async_heater_turn_on()
-            elif self._heat_loss_heater_state == ClimateActionState.ON or (
-                ((self.ac_mode and too_hot) or (not self.ac_mode and too_cold))
-                and self._heat_loss_heater_state != ClimateActionState.OFF
-            ):
-                _LOGGER.info("Turning on heater %s", self.heater_entity_id)
+            elif self._heat_loss_heater_state == ClimateActionState.ON:
+                _LOGGER.info(
+                    "Turning on heater %s due to heat loss: %s",
+                    self.heater_entity_id,
+                    self._heat_loss_heater_state,
+                )
                 await self._async_heater_turn_on()
+            elif (self.ac_mode and too_hot) or (not self.ac_mode and too_cold):
+                if self._heat_loss_heater_state != ClimateActionState.OFF:
+                    _LOGGER.info("Turning on heater %s", self.heater_entity_id)
+                    await self._async_heater_turn_on()
+                else:
+                    _LOGGER.info(
+                        "Heater is forced off due to heat loss, not turning on"
+                    )
             elif time is not None:
                 # The time argument is passed only in keep-alive case
                 _LOGGER.info(
