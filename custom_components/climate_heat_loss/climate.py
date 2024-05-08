@@ -1295,6 +1295,14 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
 
             if self._power_limit_heater_state is ClimateActionState.OFF:
                 if self._is_device_active:
+                    _LOGGER.debug(
+                        "Resetting heat loss state and delays due to power limit"
+                    )
+                    self._heat_loss_too_hot_since = None
+                    self._heat_loss_too_cold_since = None
+                    self._heat_loss_idle_since = None
+                    # self._heat_loss_current_state_since = None
+                    self._heat_loss_heater_state = ClimateActionState.IDLE
                     _LOGGER.info(
                         "Turning off heater %s due to power limit",
                         self.heater_entity_id,
