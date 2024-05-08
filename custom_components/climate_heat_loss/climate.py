@@ -943,8 +943,6 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
             delay_scale_factor,
         )
 
-        wanted_power_state: ClimateActionState | None = None
-
         wanted_power_limit = await self._get_value_from_template_str_float(
             self._wanted_power_limit
         )
