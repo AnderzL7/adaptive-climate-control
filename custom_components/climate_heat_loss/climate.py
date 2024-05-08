@@ -791,7 +791,16 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
 
         if (
             self._power_limit_heater_state != old_power_limit_state
-            or self._heat_loss_heater_state != old_heat_loss_state
+            and not (
+                old_power_limit_state in [None, ClimateActionState.IDLE]
+                and self._power_limit_heater_state in [None, ClimateActionState.IDLE]
+            )
+        ) or (
+            self._heat_loss_heater_state != old_heat_loss_state
+            and not (
+                old_heat_loss_state in [None, ClimateActionState.IDLE]
+                and self._heat_loss_heater_state in [None, ClimateActionState.IDLE]
+            )
         ):
             _LOGGER.debug(
                 "Running control heating due to power limit or heat loss change. Power limit from %s to %s, heat loss from %s to %s",
