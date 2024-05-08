@@ -890,7 +890,7 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
         wanted_power_limit: float,
         delay_scale_factor: float,
     ):
-        if power_input * power_scale_factor > wanted_power_limit:
+        if power_input > power_scale_factor * wanted_power_limit:
             self._wanted_power_limit_idle_since = None
             if self._wanted_power_limit_off_since is None:
                 self._wanted_power_limit_off_since = datetime.now()
@@ -900,7 +900,7 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
                 < datetime.now().timestamp()
             ):
                 self._power_limit_heater_state = ClimateActionState.OFF
-        elif power_input * power_scale_factor < wanted_power_limit:
+        elif power_input < power_scale_factor * wanted_power_limit:
             self._wanted_power_limit_off_since = None
             if self._wanted_power_limit_idle_since is None:
                 self._wanted_power_limit_idle_since = datetime.now()
