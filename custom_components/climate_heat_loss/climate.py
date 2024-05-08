@@ -807,6 +807,43 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
 
         return lower, upper
 
+    async def _get_value_from_template_str_float(self, value: str | Template | float):
+        """Get the value from a template, a string or a float and return as float."""
+        if isinstance(value, Template) and value.ensure_valid:
+            new_value = value.async_render()
+            if not isinstance(new_value, str | int | float):
+                if new_value is None:
+                    return None
+                _LOGGER.error(
+                    "Invalid template value: %s, expected string or float", new_value
+                )
+                return None
+        elif isinstance(value, str) and cv.entity_id(value):
+            new_value = self.hass.states.get(value).state
+        elif isinstance(value, float):
+            new_value = value
+        else:
+            _LOGGER.error(
+                "Invalid value: %s, expected template, string or float", value
+            )
+            return None
+
+        if isinstance(new_value, str):
+            if new_value.lower() in ["unavailable", "unknown"]:
+                return None
+            try:
+                new_value = float(new_value)
+            except ValueError:
+                _LOGGER.error(
+                    "Rendered template value is not a float string: %s", new_value
+                )
+                return None
+
+        if not isinstance(new_value, float):
+            new_value = float(new_value)
+
+        return new_value
+
     def _get_current_power_limit_scale_value(
         self, lower: int | None, upper: int | None, scale_key: PowerLimitScaleKey
     ) -> float:
@@ -846,50 +883,13 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
             upper - lower
         )
 
-    async def _get_value_from_template_str_float(self, value: str | Template | float):
-        """Get the value from a template, a string or a float and return as float."""
-        if isinstance(value, Template) and value.ensure_valid:
-            new_value = value.async_render()
-            if not isinstance(new_value, str | int | float):
-                if new_value is None:
-                    return None
-                _LOGGER.error(
-                    "Invalid template value: %s, expected string or float", new_value
-                )
-                return None
-        elif isinstance(value, str) and cv.entity_id(value):
-            new_value = self.hass.states.get(value).state
-        elif isinstance(value, float):
-            new_value = value
-        else:
-            _LOGGER.error(
-                "Invalid value: %s, expected template, string or float", value
-            )
-            return None
-
-        if isinstance(new_value, str):
-            if new_value.lower() in ["unavailable", "unknown"]:
-                return None
-            try:
-                new_value = float(new_value)
-            except ValueError:
-                _LOGGER.error(
-                    "Rendered template value is not a float string: %s", new_value
-                )
-                return None
-
-        if not isinstance(new_value, float):
-            new_value = float(new_value)
-
-        return new_value
-
-    def _get_wanted_power_limit_state(
+    def _apply_power_limit_state(
         self,
         power_input: float,
         power_scale_factor: float,
         wanted_power_limit: float,
         delay_scale_factor: float,
-    ) -> ClimateActionState | None:
+    ):
         if power_input * power_scale_factor > wanted_power_limit:
             self._wanted_power_limit_idle_since = None
             if self._wanted_power_limit_off_since is None:
@@ -899,7 +899,7 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
                 + (self._power_limit_delay.total_seconds() * delay_scale_factor)
                 < datetime.now().timestamp()
             ):
-                return ClimateActionState.OFF
+                self._power_limit_heater_state = ClimateActionState.OFF
         elif power_input * power_scale_factor < wanted_power_limit:
             self._wanted_power_limit_off_since = None
             if self._wanted_power_limit_idle_since is None:
@@ -909,12 +909,17 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
                 + (self._power_limit_delay.total_seconds() * delay_scale_factor)
                 < datetime.now().timestamp()
             ):
-                return ClimateActionState.IDLE
+                self._power_limit_heater_state = ClimateActionState.IDLE
 
     async def _async_apply_power_limit_state(self) -> None:
         """Apply the power limit state."""
         if self._power_input is None or self._wanted_power_limit is None:
             self._power_limit_heater_state = ClimateActionState.IDLE
+            return
+
+        power_input = await self._get_value_from_template_str_float(self._power_input)
+
+        if power_input is None:
             return
 
         if self._is_device_active:
@@ -932,37 +937,29 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
             lower, upper, delay_scale_key
         )
 
-        power_input = await self._get_value_from_template_str_float(self._power_input)
-
-        if power_input is None:
-            return
+        _LOGGER.debug(
+            "Power scale factor: %s, Delay scale factor: %s",
+            power_scale_factor,
+            delay_scale_factor,
+        )
 
         wanted_power_state: ClimateActionState | None = None
 
-        if self._wanted_power_limit is not None:
-            wanted_power_limit = await self._get_value_from_template_str_float(
-                self._wanted_power_limit
-            )
-            if wanted_power_limit is not None:
-                wanted_power_state = self._get_wanted_power_limit_state(
-                    power_input,
-                    power_scale_factor,
-                    wanted_power_limit,
-                    delay_scale_factor,
-                )
-
-        if wanted_power_state == ClimateActionState.OFF:
-            self._power_limit_heater_state = ClimateActionState.OFF
-        elif wanted_power_state in (
-            ClimateActionState.IDLE,
-            None,
-        ):
-            self._power_limit_heater_state = ClimateActionState.IDLE
-
-        _LOGGER.debug(
-            "Power limit state: %s",
-            self._power_limit_heater_state,
+        wanted_power_limit = await self._get_value_from_template_str_float(
+            self._wanted_power_limit
         )
+        if wanted_power_limit is not None:
+            self._apply_power_limit_state(
+                power_input,
+                power_scale_factor,
+                wanted_power_limit,
+                delay_scale_factor,
+            )
+
+            _LOGGER.debug(
+                "Power limit state: %s",
+                self._power_limit_heater_state,
+            )
 
     def get_heat_loss_scale_factor(self):
         """Calculate the scale factor based on the current temperature."""
