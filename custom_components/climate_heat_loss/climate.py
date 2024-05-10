@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 import math
 from typing import Any
 
+from sqlalchemy import literal
 import voluptuous as vol
 
 from homeassistant.components.climate import (
@@ -845,11 +846,17 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
         return new_value
 
     def _get_current_power_limit_scale_value(
-        self, lower: int | None, upper: int | None, scale_key: PowerLimitScaleKey
+        self,
+        lower: int | None,
+        upper: int | None,
+        scale_key: PowerLimitScaleKey,
+        # required_direction is a list with "upper" and or "lower" if the direction is required
+        required_direction: list[str] | None = None,
     ) -> float:
         """Get the current power scale factor."""
+        default_factor = 1.0
         if lower is None and upper is None:
-            return 1.0
+            return default_factor
         minute = datetime.now().minute
 
         scale_dict = self._power_limit_scale_factors
@@ -871,45 +878,21 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
             upperValue = scale_dict[str(upper)][scale_key]
 
         if lowerValue is None and upperValue is None:
-            return 1.0
+            return default_factor
 
-        if lowerValue is None:
+        if lowerValue is None and "lower" in required_direction:
+            return default_factor
+        elif lowerValue is None:
             return upperValue
-        if upperValue is None:
+        if upperValue is None and "upper" in required_direction:
+            return default_factor
+        elif upperValue is None:
             return lowerValue
 
         # Calculate the weighted average
         return (upperValue * (minute - lower) + lowerValue * (upper - minute)) / (
             upper - lower
         )
-
-    def _apply_power_limit_state(
-        self,
-        power_input: float,
-        power_scale_factor: float,
-        wanted_power_limit: float,
-        delay_scale_factor: float,
-    ):
-        if power_input > power_scale_factor * wanted_power_limit:
-            self._wanted_power_limit_idle_since = None
-            if self._wanted_power_limit_off_since is None:
-                self._wanted_power_limit_off_since = datetime.now()
-            elif (
-                self._wanted_power_limit_off_since.timestamp()
-                + (self._power_limit_delay.total_seconds() * delay_scale_factor)
-                < datetime.now().timestamp()
-            ):
-                self._power_limit_heater_state = ClimateActionState.OFF
-        elif power_input < power_scale_factor * wanted_power_limit:
-            self._wanted_power_limit_off_since = None
-            if self._wanted_power_limit_idle_since is None:
-                self._wanted_power_limit_idle_since = datetime.now()
-            elif (
-                self._wanted_power_limit_idle_since.timestamp()
-                + (self._power_limit_delay.total_seconds() * delay_scale_factor)
-                < datetime.now().timestamp()
-            ):
-                self._power_limit_heater_state = ClimateActionState.IDLE
 
     async def _async_apply_power_limit_state(self) -> None:
         """Apply the power limit state."""
@@ -934,7 +917,7 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
             lower, upper, power_scale_key
         )
         delay_scale_factor = self._get_current_power_limit_scale_value(
-            lower, upper, delay_scale_key
+            lower, upper, delay_scale_key, ["lower"]
         )
 
         _LOGGER.debug(
@@ -946,18 +929,33 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
         wanted_power_limit = await self._get_value_from_template_str_float(
             self._wanted_power_limit
         )
-        if wanted_power_limit is not None:
-            self._apply_power_limit_state(
-                power_input,
-                power_scale_factor,
-                wanted_power_limit,
-                delay_scale_factor,
-            )
 
-            _LOGGER.debug(
-                "Power limit state: %s",
-                self._power_limit_heater_state,
-            )
+        if wanted_power_limit is not None:
+            if power_input > power_scale_factor * wanted_power_limit:
+                self._wanted_power_limit_idle_since = None
+                if self._wanted_power_limit_off_since is None:
+                    self._wanted_power_limit_off_since = datetime.now()
+                elif (
+                    self._wanted_power_limit_off_since.timestamp()
+                    + (self._power_limit_delay.total_seconds() * delay_scale_factor)
+                    < datetime.now().timestamp()
+                ):
+                    self._power_limit_heater_state = ClimateActionState.OFF
+            elif power_input < power_scale_factor * wanted_power_limit:
+                self._wanted_power_limit_off_since = None
+                if self._wanted_power_limit_idle_since is None:
+                    self._wanted_power_limit_idle_since = datetime.now()
+                elif (
+                    self._wanted_power_limit_idle_since.timestamp()
+                    + (self._power_limit_delay.total_seconds() * delay_scale_factor)
+                    < datetime.now().timestamp()
+                ):
+                    self._power_limit_heater_state = ClimateActionState.IDLE
+
+        _LOGGER.debug(
+            "Power limit state: %s",
+            self._power_limit_heater_state,
+        )
 
     def get_heat_loss_scale_factor(self):
         """Calculate the scale factor based on the current temperature."""
@@ -1280,7 +1278,8 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
                         await self._async_heater_turn_off()
                     else:
                         _LOGGER.info(
-                            "Heater is forced on due to heat loss, not turning off"
+                            "Heater is forced on due to heat loss: %s, not turning off",
+                            self._heat_loss_heater_state,
                         )
                 elif time is not None:
                     # The time argument is passed only in keep-alive case
