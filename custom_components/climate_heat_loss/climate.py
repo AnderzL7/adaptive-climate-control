@@ -11,7 +11,6 @@ from datetime import datetime, timedelta
 import math
 from typing import Any
 
-from sqlalchemy import literal
 import voluptuous as vol
 
 from homeassistant.components.climate import (
