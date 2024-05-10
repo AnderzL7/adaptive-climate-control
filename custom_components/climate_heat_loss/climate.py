@@ -994,9 +994,9 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
 
         # Calculate scale factor based on target temperature
         if self._target_temp <= temp_scale_lower:
-            return cold_tolerance_factor
-        elif self._target_temp >= temp_scale_upper:
             return hot_tolerance_factor
+        elif self._target_temp >= temp_scale_upper:
+            return cold_tolerance_factor
         elif self._target_temp == temp_scale_middle:
             return current_temp_factor
         else:
@@ -1005,8 +1005,8 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
                 fraction = (self._target_temp - temp_scale_lower) / (
                     temp_scale_middle - temp_scale_lower
                 )
-                return cold_tolerance_factor + fraction * (
-                    current_temp_factor - cold_tolerance_factor
+                return hot_tolerance_factor + fraction * (
+                    current_temp_factor - hot_tolerance_factor
                 )
             else:
                 # Calculate linear interpolation between middle and upper
@@ -1014,7 +1014,7 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
                     temp_scale_upper - temp_scale_middle
                 )
                 return current_temp_factor + fraction * (
-                    hot_tolerance_factor - current_temp_factor
+                    cold_tolerance_factor - current_temp_factor
                 )
 
     async def _async_apply_heat_loss_state(self) -> None:
