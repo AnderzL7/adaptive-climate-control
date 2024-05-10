@@ -850,7 +850,7 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
         upper: int | None,
         scale_key: PowerLimitScaleKey,
         # required_direction is a list with "upper" and or "lower" if the direction is required
-        required_direction: list[str] | None = None,
+        required_direction: list[str] = [],
     ) -> float:
         """Get the current power scale factor."""
         default_factor = 1.0
