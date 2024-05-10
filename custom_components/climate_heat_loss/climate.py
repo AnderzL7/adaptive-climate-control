@@ -1031,17 +1031,17 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
         )
         old_state = self._heat_loss_heater_state
 
-        energy_loss = await self._get_value_from_template_str_float(
+        heat_loss = await self._get_value_from_template_str_float(
             self._heat_loss_energy_loss
         )
         energy_input = await self._get_value_from_template_str_float(
             self._heat_loss_energy_input
         )
 
-        if energy_loss is None or energy_input is None:
+        if heat_loss is None or energy_input is None:
             _LOGGER.debug(
                 "Calculated energy loss or energy input is None. Energy loss: %s, Energy input: %s",
-                energy_loss,
+                heat_loss,
                 energy_input,
             )
             return
@@ -1053,7 +1053,8 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
             and self._target_temp <= self._cur_temp + self._hot_tolerance
         )
 
-        scaled_energy_input = energy_input * scale_factor
+        # scaled_energy_input = energy_input * scale_factor
+        scaled_heat_loss = heat_loss * scale_factor
 
         current_state_since = (
             datetime.now().timestamp() - self._heat_loss_current_state_since.timestamp()
@@ -1062,15 +1063,15 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
         )
 
         _LOGGER.debug(
-            "Energy loss: %s, Energy input: %s, Scale factor: %s, Within tolerance: %s, energy_input * scale_factor: %s",
-            energy_loss,
+            "Energy loss: %s, Energy input: %s, Scale factor: %s, Within tolerance: %s, energy_loss * scale_factor: %s",
+            heat_loss,
             energy_input,
             scale_factor,
             within_tolerance,
-            scaled_energy_input,
+            scaled_heat_loss,
         )
 
-        if scaled_energy_input < energy_loss and within_tolerance:
+        if energy_input < scaled_heat_loss and within_tolerance:
             self._heat_loss_too_hot_since = None
             self._heat_loss_idle_since = None
             too_cold_since = (
@@ -1107,7 +1108,7 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
                     datetime.now().timestamp()
                     - self._heat_loss_too_cold_since.timestamp(),
                 )
-        elif scaled_energy_input > energy_loss and within_tolerance:
+        elif energy_input > scaled_heat_loss and within_tolerance:
             self._heat_loss_too_cold_since = None
             self._heat_loss_idle_since = None
             too_hot_since = (
