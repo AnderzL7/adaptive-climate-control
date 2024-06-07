@@ -1063,7 +1063,7 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
             )
             return
 
-        scale_factor = self.get_heat_loss_scale_factor()
+        scale_factor = await self.get_heat_loss_scale_factor()
 
         within_tolerance = (
             self._target_temp >= self._cur_temp - self._cold_tolerance
