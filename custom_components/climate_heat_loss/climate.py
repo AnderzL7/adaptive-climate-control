@@ -162,7 +162,8 @@ def validate_power_limit_scale_key(key):
         PowerLimitScaleKey.TURN_ON_DELAY,
     ]:
         raise vol.Invalid(
-            f"Key must be either '{PowerLimitScaleKey.TURN_OFF}', '{PowerLimitScaleKey.TURN_ON}', '{PowerLimitScaleKey.TURN_OFF_DELAY}' or '{PowerLimitScaleKey.TURN_ON_DELAY}'"
+            f"Key must be either '{PowerLimitScaleKey.TURN_OFF}', '{PowerLimitScaleKey.TURN_ON}', '{
+                PowerLimitScaleKey.TURN_OFF_DELAY}' or '{PowerLimitScaleKey.TURN_ON_DELAY}'"
         )
     return key
 
@@ -181,7 +182,8 @@ def check_all_or_non(keys):
         # Check if the count is neither all nor none
         if present_count not in (0, len(keys)):
             raise vol.Invalid(
-                f"All or none of the following keys must be set: {', '.join(keys)}"
+                f"All or none of the following keys must be set: {
+                    ', '.join(keys)}"
             )
         return obj
 
@@ -207,7 +209,8 @@ def check_main_secondary(main_keys, secondary_keys):
         # If secondary keys are set, raise an error as the main keys are not set
         if secondary_keys_present:
             raise vol.Invalid(
-                f"Secondary keys {', '.join(secondary_keys)} must be set only if main keys {', '.join(main_keys)} are set"
+                f"Secondary keys {', '.join(secondary_keys)} must be set only if main keys {
+                    ', '.join(main_keys)} are set"
             )
 
         return obj
@@ -278,7 +281,9 @@ PLATFORM_SCHEMA = (
                     vol.Optional(
                         CONF_HEAT_LOSS_SCALE_FACTORS
                     ): cv.schema_with_slug_keys(
-                        value_schema=cv.positive_float,
+                        value_schema=vol.Any(
+                            cv.positive_float, cv.entity_id, cv.template
+                        ),
                         slug_validator=validate_heat_loss_scale_factors,
                     ),
                 },
@@ -374,7 +379,7 @@ async def async_setup_platform(
         heat_loss_energy_input: float | str | Template | None = heat_loss.get(
             CONF_HEAT_LOSS_ENERGY_INPUT
         )
-        heat_loss_energy_store_scale_factors: dict[str, float] | None = heat_loss.get(
+        heat_loss_energy_store_scale_factors: dict[str, float | str | Template] | None = heat_loss.get(
             CONF_HEAT_LOSS_SCALE_FACTORS
         )
         # heat_loss_period: timedelta | None = heat_loss.get(CONF_HEAT_LOSS_PERIOD)
@@ -451,7 +456,7 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
         heat_loss_energy_loss: float | str | Template | None,
         heat_loss_energy_input: float | str | Template | None,
         heat_loss_delay: timedelta,
-        heat_loss_energy_store_scale_factors: dict[str, float] | None,
+        heat_loss_energy_store_scale_factors: dict[str, float | str | Template] | None,
         # heat_loss_period: timedelta | None,
         # heat_loss_contribution: float | str | Template | None,
     ) -> None:
@@ -465,7 +470,8 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
         self._hot_tolerance = hot_tolerance
         self._keep_alive = keep_alive
         self._hvac_mode = initial_hvac_mode
-        self._saved_target_temp = target_temp or next(iter(presets.values()), None)
+        self._saved_target_temp = target_temp or next(
+            iter(presets.values()), None)
         self._temp_precision = precision
         self._temp_target_temperature_step = target_temperature_step
         if self.ac_mode:
@@ -512,10 +518,17 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
         self._heat_loss_energy_input = heat_loss_energy_input
         # self._heat_loss_delay = timedelta(minutes=5)
         self._heat_loss_delay = heat_loss_delay
-        self._heat_loss_energy_store_scale_factors = (
-            heat_loss_energy_store_scale_factors
-        )
         # self._heat_loss_period = heat_loss_period
+
+        # Loop over all keys in heat_loss_energy_store_scale_factors if not None and
+        # convert to float and save as dict[str, float] in _heat_loss_energy_store_scale_factors_float
+        if heat_loss_energy_store_scale_factors is not None:
+            self._heat_loss_energy_store_scale_factors_float = {
+                key: self._get_value_from_template_str_float(value)
+                for key, value in heat_loss_energy_store_scale_factors.items()
+            }
+        else:
+            self._heat_loss_energy_store_scale_factors_float = None
 
     async def async_added_to_hass(self) -> None:
         """Run when entity about to be added."""
@@ -571,7 +584,8 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
         if self.hass.state is CoreState.running:
             _async_startup()
         else:
-            self.hass.bus.async_listen_once(EVENT_HOMEASSISTANT_START, _async_startup)
+            self.hass.bus.async_listen_once(
+                EVENT_HOMEASSISTANT_START, _async_startup)
 
         # Check If we have an old state
         if (old_state := await self.async_get_last_state()) is not None:
@@ -588,12 +602,14 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
                         self._target_temp,
                     )
                 else:
-                    self._target_temp = float(old_state.attributes[ATTR_TEMPERATURE])
+                    self._target_temp = float(
+                        old_state.attributes[ATTR_TEMPERATURE])
             if (
                 self.preset_modes
                 and old_state.attributes.get(ATTR_PRESET_MODE) in self.preset_modes
             ):
-                self._attr_preset_mode = old_state.attributes.get(ATTR_PRESET_MODE)
+                self._attr_preset_mode = old_state.attributes.get(
+                    ATTR_PRESET_MODE)
             if not self._hvac_mode and old_state.state:
                 self._hvac_mode = HVACMode(old_state.state)
 
@@ -793,7 +809,8 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
 
         if str(minute) in self._power_limit_scale_factors:
             return minute, None
-        keys = sorted([int(k) for k in self._power_limit_scale_factors if k.isdigit()])
+        keys = sorted([int(k)
+                      for k in self._power_limit_scale_factors if k.isdigit()])
 
         lower = None
         upper = None
@@ -812,11 +829,10 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
         if isinstance(value, Template) and value.ensure_valid:
             new_value = value.async_render()
             if not isinstance(new_value, str | int | float):
-                if new_value is None:
-                    return None
-                _LOGGER.error(
-                    "Invalid template value: %s, expected string or float", new_value
-                )
+                if new_value is not None:
+                    _LOGGER.error(
+                        "Invalid rendered template value: %s, expected string, number or None", new_value
+                    )
                 return None
         elif isinstance(value, str) and cv.entity_id(value):
             new_value = self.hass.states.get(value).state
@@ -964,24 +980,24 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
             return DEFAULT_SCALE_FACTOR
 
         hot_tolerance_factor = (
-            self._heat_loss_energy_store_scale_factors.get(
+            self._heat_loss_energy_store_scale_factors_float.get(
                 "hot_tolerance", DEFAULT_SCALE_FACTOR
             )
-            if self._heat_loss_energy_store_scale_factors is not None
+            if self._heat_loss_energy_store_scale_factors_float is not None
             else DEFAULT_SCALE_FACTOR
         )
         current_temp_factor = (
-            self._heat_loss_energy_store_scale_factors.get(
+            self._heat_loss_energy_store_scale_factors_float.get(
                 "current_temp", DEFAULT_SCALE_FACTOR
             )
-            if self._heat_loss_energy_store_scale_factors is not None
+            if self._heat_loss_energy_store_scale_factors_float is not None
             else DEFAULT_SCALE_FACTOR
         )
         cold_tolerance_factor = (
-            self._heat_loss_energy_store_scale_factors.get(
+            self._heat_loss_energy_store_scale_factors_float.get(
                 "cold_tolerance", DEFAULT_SCALE_FACTOR
             )
-            if self._heat_loss_energy_store_scale_factors is not None
+            if self._heat_loss_energy_store_scale_factors_float is not None
             else DEFAULT_SCALE_FACTOR
         )
 
@@ -1274,7 +1290,8 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
                     await self._async_heater_turn_off()
                 elif (self.ac_mode and too_cold) or (not self.ac_mode and too_hot):
                     if self._heat_loss_heater_state != ClimateActionState.ON:
-                        _LOGGER.info("Turning off heater %s", self.heater_entity_id)
+                        _LOGGER.info("Turning off heater %s",
+                                     self.heater_entity_id)
                         await self._async_heater_turn_off()
                     else:
                         _LOGGER.info(
