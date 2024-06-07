@@ -518,17 +518,8 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
         self._heat_loss_energy_input = heat_loss_energy_input
         # self._heat_loss_delay = timedelta(minutes=5)
         self._heat_loss_delay = heat_loss_delay
+        self._heat_loss_energy_store_scale_factors = heat_loss_energy_store_scale_factors
         # self._heat_loss_period = heat_loss_period
-
-        # Loop over all keys in heat_loss_energy_store_scale_factors if not None and
-        # convert to float and save as dict[str, float] in _heat_loss_energy_store_scale_factors_float
-        if heat_loss_energy_store_scale_factors is not None:
-            self._heat_loss_energy_store_scale_factors_float = {
-                key: self._get_value_from_template_str_float(value)
-                for key, value in heat_loss_energy_store_scale_factors.items()
-            }
-        else:
-            self._heat_loss_energy_store_scale_factors_float = None
 
     async def async_added_to_hass(self) -> None:
         """Run when entity about to be added."""
@@ -972,32 +963,42 @@ class ClimateHeatLoss(ClimateEntity, RestoreEntity):
             self._power_limit_heater_state,
         )
 
-    def get_heat_loss_scale_factor(self):
+    async def get_heat_loss_scale_factor(self):
         """Calculate the scale factor based on the current temperature."""
         DEFAULT_SCALE_FACTOR = 1.0
 
         if self._target_temp is None or self._cur_temp is None:
             return DEFAULT_SCALE_FACTOR
 
+        # Loop over all keys in heat_loss_energy_store_scale_factors if not None and
+        # convert to float and save as dict[str, float] in _heat_loss_energy_store_scale_factors_float
+        if self._heat_loss_energy_store_scale_factors is not None:
+            calculated_factors = {
+                key: await self._get_value_from_template_str_float(value)
+                for key, value in self._heat_loss_energy_store_scale_factors.items()
+            }
+        else:
+            calculated_factors = None
+
         hot_tolerance_factor = (
-            self._heat_loss_energy_store_scale_factors_float.get(
+            calculated_factors.get(
                 "hot_tolerance", DEFAULT_SCALE_FACTOR
             )
-            if self._heat_loss_energy_store_scale_factors_float is not None
+            if calculated_factors is not None
             else DEFAULT_SCALE_FACTOR
         )
         current_temp_factor = (
-            self._heat_loss_energy_store_scale_factors_float.get(
+            calculated_factors.get(
                 "current_temp", DEFAULT_SCALE_FACTOR
             )
-            if self._heat_loss_energy_store_scale_factors_float is not None
+            if calculated_factors is not None
             else DEFAULT_SCALE_FACTOR
         )
         cold_tolerance_factor = (
-            self._heat_loss_energy_store_scale_factors_float.get(
+            calculated_factors.get(
                 "cold_tolerance", DEFAULT_SCALE_FACTOR
             )
-            if self._heat_loss_energy_store_scale_factors_float is not None
+            if calculated_factors is not None
             else DEFAULT_SCALE_FACTOR
         )
 
