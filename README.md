@@ -18,6 +18,8 @@ Platform | Description
 
 ## Installation
 
+### Manual
+
 1. Using the tool of choice open the directory (folder) for your HA configuration (where you find `configuration.yaml`).
 1. If you do not have a `custom_components` directory (folder) there, you need to create it.
 1. In the `custom_components` directory (folder) create a new folder called `climate_heat_loss`.
@@ -25,6 +27,13 @@ Platform | Description
 1. Place the files you downloaded in the new directory (folder) you created.
 1. Restart Home Assistant
 1. In the HA UI go to "Configuration" -> "Integrations" click "+" and search for "Climate with heat loss calculation"
+
+### HACS
+
+1. Open HACS in home assistant
+2. Under the meatball menu in the top right -> "Add custom repository"
+3. Copy the URL of this GitHub repository -> Click "Add"
+4. Find Climate heat loss in the list and click "Install"
 
 ## Configuration is done in the UI
 
