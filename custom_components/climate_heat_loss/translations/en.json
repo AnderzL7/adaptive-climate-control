@@ -1,8 +1,0 @@
-{
-    "services": {
-      "reload": {
-        "name": "[%key:common::action::reload%]",
-        "description": "Reloads Climate with heat loss calculation from the YAML-configuration."
-      }
-    }
-  }

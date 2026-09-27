@@ -1,54 +1,47 @@
-# Climate with heat loss calculation
+# Adaptive Climate Control
 
-[![GitHub Release][releases-shield]][releases]
-[![GitHub Activity][commits-shield]][commits]
-[![License][license-shield]](LICENSE)
+A Home Assistant climate-model project derived from
+[`climate_heat_loss`](https://github.com/AnderzL7/climate_heat_loss), with its Git
+history retained. The first release is **shadow only**: it publishes a 30-minute
+temperature forecast for configured rooms and never calls a heater service.
 
-![Project Maintenance][maintenance-shield]
+## Status
 
-_Integration to integrate with [climate_heat_loss][climate_heat_loss]._
-
-**This integration will set up the following platforms.**
-
-Platform | Description
--- | --
-`binary_sensor` | Show something `True` or `False`.
-`sensor` | Show info from blueprint API.
-`switch` | Switch something `True` or `False`.
+The thermal model and a YAML-configured HA sensor adapter are under development.
+Current predictions use provisional conductive surfaces, measured room and outside
+temperature, measured heating power, and an approximate emitter heat lag. Openings,
+solar gain, sensor correction, calibrated capacity, and control migration are
+future work. Treat the forecasts as diagnostics, not thermostat decisions.
 
 ## Installation
 
-### Manual
+The repository can be added to HACS as a custom **Integration** repository, or
+`custom_components/adaptive_climate_control/` can be copied into the HA config
+directory. The integration currently uses YAML configuration under its own
+`adaptive_climate_control:` key. An example structure is in
+[`examples/shadow.yaml`](examples/shadow.yaml). Restart Home Assistant after a new
+custom integration is installed, then check the configuration. On a Raspberry Pi
+with fragile Zigbee connectivity, plan that restart separately.
 
-1. Using the tool of choice open the directory (folder) for your HA configuration (where you find `configuration.yaml`).
-1. If you do not have a `custom_components` directory (folder) there, you need to create it.
-1. In the `custom_components` directory (folder) create a new folder called `climate_heat_loss`.
-1. Download _all_ the files from the `custom_components/climate_heat_loss/` directory (folder) in this repository.
-1. Place the files you downloaded in the new directory (folder) you created.
-1. Restart Home Assistant
-1. In the HA UI go to "Configuration" -> "Integrations" click "+" and search for "Climate with heat loss calculation"
+House-specific geometry, entity IDs, and tuning should be kept in private HA
+configuration, not committed to this public repository.
 
-### HACS
+## Pure model
 
-1. Open HACS in home assistant
-2. Under the meatball menu in the top right -> "Add custom repository"
-3. Copy the URL of this GitHub repository -> Click "Add"
-4. Find Climate heat loss in the list and click "Install"
+`model.py` computes signed heat exchange across walls, emitter storage and
+release, R/U values, and terrain-horizon interpolation. `observations.py`
+contains bounded estimates for lagging sensors and humidity conversion.
+`power.py` contains a provisional hard-veto heater ranking for future shadow
+comparison. None of these modules imports Home Assistant. Run their checks with:
 
-## Configuration is done in the UI
+```text
+python -m pytest -q tests
+```
 
-<!---->
+The current HA sensor adapter uses measured weighted-room inputs and the thermal
+model. Peer-based sensor estimation and power-priority decisions are not yet wired
+into HA.
 
-## Contributions are welcome!
+## License
 
-If you want to contribute to this please read the [Contribution guidelines](CONTRIBUTING.md)
-
-***
-
-[climate_heat_loss]: https://github.com/AnderzL7/climate_heat_loss
-[commits-shield]: https://img.shields.io/github/commit-activity/y/AnderzL7/climate_heat_loss.svg?style=for-the-badge
-[commits]: https://github.com/AnderzL7/climate_heat_loss/commits/main
-[license-shield]: https://img.shields.io/github/license/AnderzL7/climate_heat_loss.svg?style=for-the-badge
-[maintenance-shield]: https://img.shields.io/badge/maintainer-Anders%20Lund%20%40AnderzL7-blue.svg?style=for-the-badge
-[releases-shield]: https://img.shields.io/github/release/AnderzL7/climate_heat_loss.svg?style=for-the-badge
-[releases]: https://github.com/AnderzL7/climate_heat_loss/releases
+MIT, inherited from `climate_heat_loss`.

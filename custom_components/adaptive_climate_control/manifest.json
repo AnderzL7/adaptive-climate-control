@@ -1,0 +1,11 @@
+{
+  "domain": "adaptive_climate_control",
+  "name": "Adaptive Climate Control",
+  "codeowners": ["@AnderzL7"],
+  "dependencies": ["sensor"],
+  "documentation": "https://github.com/AnderzL7/adaptive-climate-control",
+  "integration_type": "helper",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/AnderzL7/adaptive-climate-control/issues",
+  "version": "0.1.0"
+}

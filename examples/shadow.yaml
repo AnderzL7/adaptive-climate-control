@@ -1,0 +1,22 @@
+# Example only. Use your own entity IDs and surveyed or clearly provisional
+# heat capacities and surface coefficients in private HA configuration.
+adaptive_climate_control:
+  outside_entity: sensor.outside_temperature
+  horizon_minutes: 30
+  rooms:
+    living_room:
+      temperature_entity: sensor.living_room_temperature
+      heating_power_entity: sensor.living_room_heating_power
+      recent_heating_power_entity: sensor.living_room_heating_power_1h
+      capacity_j_k: 1000000
+  boundaries: {}
+  emitters:
+    - name: living_room_emitter
+      zone: living_room
+      release_time_s: 900
+  surfaces:
+    - name: living_room_outer_wall
+      zone_a: living_room
+      zone_b: outside
+      area_m2: 10
+      u_w_m2k: 0.5
