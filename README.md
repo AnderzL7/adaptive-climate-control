@@ -19,9 +19,10 @@ The repository can be added to HACS as a custom **Integration** repository, or
 `custom_components/adaptive_climate_control/` can be copied into the HA config
 directory. The integration currently uses YAML configuration under its own
 `adaptive_climate_control:` key. An example structure is in
-[`examples/shadow.yaml`](examples/shadow.yaml). Restart Home Assistant after a new
-custom integration is installed, then check the configuration. On a Raspberry Pi
-with fragile Zigbee connectivity, plan that restart separately.
+[`examples/shadow.yaml`](examples/shadow.yaml). Check the HA configuration after
+copying the integration and YAML, then schedule a Core restart to load the new
+integration. On a Raspberry Pi with fragile Zigbee connectivity, plan that
+restart separately.
 
 House-specific geometry, entity IDs, and tuning should be kept in private HA
 configuration, not committed to this public repository.
