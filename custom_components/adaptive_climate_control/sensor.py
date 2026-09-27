@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from math import isfinite
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
@@ -40,6 +40,15 @@ def _number(hass: HomeAssistant, entity_id: str) -> float | None:
     except (TypeError, ValueError):
         return None
     return value if isfinite(value) else None
+
+
+def _age_minutes(hass: HomeAssistant, entity_id: str, now: datetime) -> float | None:
+    """Report HA's last state report age, which may differ from device age."""
+    state = hass.states.get(entity_id)
+    if state is None:
+        return None
+    reported = getattr(state, "last_reported", None) or state.last_updated
+    return max(0.0, (now - reported).total_seconds() / 60)
 
 
 class ShadowForecastSensor(SensorEntity):
@@ -99,6 +108,18 @@ class ShadowForecastSensor(SensorEntity):
             emitter_input_w=emitters,
         )
         result = forecast(house, snapshot, settings["horizon_minutes"] * 60)
+        source_ids = [settings["outside_entity"], *settings["boundaries"].values()]
+        for data in settings["rooms"].values():
+            source_ids.append(data["temperature_entity"])
+            source_ids.extend(
+                data[key] for key in ("heating_power_entity", "recent_heating_power_entity") if key in data
+            )
+        now = datetime.now(UTC)
+        input_age = {
+            entity_id: round(age, 1)
+            for entity_id in dict.fromkeys(source_ids)
+            if (age := _age_minutes(self.hass, entity_id, now)) is not None
+        }
         self._attr_native_value = round(result.temperatures_c[self._room], 3)
         self._attr_available = True
         self._attr_extra_state_attributes = {
@@ -106,6 +127,8 @@ class ShadowForecastSensor(SensorEntity):
             "shadow_only": True,
             "horizon_minutes": settings["horizon_minutes"],
             "starting_temperature_c": temps[self._room],
+            "ha_input_age_minutes": input_age,
+            "ha_inputs_over_45_minutes": [entity_id for entity_id, age in input_age.items() if age > 45],
             "initial_conduction_w": round(result.initial_conduction_w[self._room], 2),
             "emitter_release_w": round(sum(
                 result.initial_emitter_release_w[emitter.name]
