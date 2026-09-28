@@ -26,10 +26,10 @@ async def async_setup_platform(
 ) -> None:
     """Add one temperature forecast entity per configured room."""
     runtime = hass.data[DOMAIN]
-    async_add_entities(
-        [ShadowForecastSensor(hass, runtime, room) for room in runtime["settings"]["rooms"]],
-        update_before_add=True,
-    )
+    runtime["entities"] = [
+        ShadowForecastSensor(hass, runtime, room) for room in runtime["active"][1]["rooms"]
+    ]
+    async_add_entities(runtime["entities"], update_before_add=True)
 
 
 def _number(hass: HomeAssistant, entity_id: str) -> float | None:
@@ -65,7 +65,7 @@ class ShadowForecastSensor(SensorEntity):
         self.hass = hass
         self._runtime = runtime
         self._room = room
-        minutes = runtime["settings"]["horizon_minutes"]
+        minutes = runtime["active"][1]["horizon_minutes"]
         self._attr_name = f"Adaptive climate {room} {minutes}m forecast"
         self._attr_unique_id = f"adaptive_climate_control_{room}_forecast_{minutes}m"
         self._attr_native_value = None
@@ -74,8 +74,7 @@ class ShadowForecastSensor(SensorEntity):
 
     async def async_update(self) -> None:
         """Take a current HA snapshot and forecast all rooms together."""
-        house = self._runtime["house"]
-        settings = self._runtime["settings"]
+        house, settings = self._runtime["active"]
         outside = _number(self.hass, settings["outside_entity"])
         temps = {
             room: _number(self.hass, data["temperature_entity"])
@@ -140,6 +139,7 @@ class ShadowForecastSensor(SensorEntity):
         self._attr_available = True
         self._attr_extra_state_attributes = {
             "model_version": MODEL_VERSION,
+            "model_reload_generation": self._runtime["generation"],
             "shadow_only": True,
             "horizon_minutes": settings["horizon_minutes"],
             "starting_temperature_c": temps[self._room],

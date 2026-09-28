@@ -31,6 +31,15 @@ restart separately.
 House-specific geometry, entity IDs, and tuning should be kept in private HA
 configuration, not committed to this public repository.
 
+After the integration has loaded once, edit its YAML model and call
+`adaptive_climate_control.reload` from Developer Tools → Actions. The service
+validates the whole new model before replacing the active one and immediately
+refreshes existing forecast sensors. Invalid YAML or geometry leaves the
+previous model active. The set of forecast room names and `horizon_minutes`
+must stay the same; changing either requires a Core restart because they define
+sensor identities. Updating Python files through HACS also requires a Core
+restart; the reload service changes model settings, not loaded Python modules.
+
 ## Pure model
 
 `model.py` computes signed heat exchange across walls, emitter storage and

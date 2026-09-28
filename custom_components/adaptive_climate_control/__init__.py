@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import voluptuous as vol
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv, discovery
+from homeassistant.helpers.reload import async_integration_yaml_config
+from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.helpers.typing import ConfigType
 
 from .const import DOMAIN
@@ -59,11 +64,8 @@ DOMAIN_SCHEMA = vol.Schema(
 CONFIG_SCHEMA = vol.Schema({vol.Optional(DOMAIN): DOMAIN_SCHEMA}, extra=vol.ALLOW_EXTRA)
 
 
-async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Build a model and register prediction sensors; never control an actuator."""
-    if DOMAIN not in config:
-        return True
-    settings = config[DOMAIN]
+def _build_house(settings: ConfigType) -> House:
+    """Validate a complete model before making it visible to forecast sensors."""
     house = House(
         capacity_j_k={name: room["capacity_j_k"] for name, room in settings["rooms"].items()},
         surfaces=tuple(Surface(**surface) for surface in settings["surfaces"]),
@@ -79,6 +81,47 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         ),
     )
     house.validate()
-    hass.data[DOMAIN] = {"house": house, "settings": settings}
+    return house
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Build a shadow model and register sensors plus a YAML settings reload."""
+    if DOMAIN not in config:
+        return True
+    settings = config[DOMAIN]
+    house = _build_house(settings)
+    runtime = {
+        "active": (house, settings),
+        "entities": [],
+        "generation": 0,
+        "reload_lock": asyncio.Lock(),
+    }
+    hass.data[DOMAIN] = runtime
+
+    async def async_reload_model(_: ServiceCall) -> None:
+        """Swap validated YAML settings without unloading Python or sensors."""
+        async with runtime["reload_lock"]:
+            reloaded = await async_integration_yaml_config(hass, DOMAIN, raise_on_failure=True)
+            if reloaded is None or DOMAIN not in reloaded:
+                raise HomeAssistantError("Adaptive climate YAML is missing; previous model remains active")
+            try:
+                candidate = DOMAIN_SCHEMA(reloaded[DOMAIN])
+                candidate_house = _build_house(candidate)
+            except (vol.Invalid, ValueError) as err:
+                raise HomeAssistantError(f"Invalid adaptive climate model; previous model remains active: {err}") from err
+
+            _, previous = runtime["active"]
+            if set(candidate["rooms"]) != set(previous["rooms"]):
+                raise HomeAssistantError("Changing forecast rooms requires a Core restart; previous model remains active")
+            if candidate["horizon_minutes"] != previous["horizon_minutes"]:
+                raise HomeAssistantError("Changing forecast horizon requires a Core restart; previous model remains active")
+
+            runtime["active"] = (candidate_house, candidate)
+            runtime["generation"] += 1
+            for entity in runtime["entities"]:
+                if entity.entity_id is not None and entity.enabled:
+                    await entity.async_update_ha_state(force_refresh=True)
+
+    async_register_admin_service(hass, DOMAIN, "reload", async_reload_model, vol.Schema({}))
     hass.async_create_task(discovery.async_load_platform(hass, "sensor", DOMAIN, {}, config))
     return True

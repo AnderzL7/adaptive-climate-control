@@ -1,0 +1,6 @@
+reload:
+  name: Reload shadow model
+  description: >-
+    Reload and validate the YAML thermal model, then refresh existing forecast
+    sensors. Room names and forecast horizon must stay the same. This never
+    changes heater control or reloads integration Python code.
