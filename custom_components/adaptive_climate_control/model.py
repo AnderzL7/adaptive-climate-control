@@ -28,6 +28,22 @@ class Surface:
 
 
 @dataclass(frozen=True)
+class AirPath:
+    """An opening whose exchange changes with its recorded position."""
+
+    name: str
+    zone_a: str
+    zone_b: str
+    closed_conductance_w_k: float
+    open_conductance_w_k: float
+
+    def conductance_w_k(self, fraction: float) -> float:
+        return self.closed_conductance_w_k + fraction * (
+            self.open_conductance_w_k - self.closed_conductance_w_k
+        )
+
+
+@dataclass(frozen=True)
 class Emitter:
     """An emitter whose stored heat is released with a first-order lag."""
 
@@ -59,6 +75,7 @@ class House:
     emitters: tuple[Emitter, ...] = ()
     boundary_names: tuple[str, ...] = ()
     setpoint_heaters: tuple[SetpointHeatProxy, ...] = ()
+    air_paths: tuple[AirPath, ...] = ()
 
     def validate(self) -> None:
         """Reject invalid geometry and capacities before forecasting."""
@@ -84,6 +101,18 @@ class House:
                 for value in (surface.area_m2, surface.u_w_m2k)
             ):
                 raise ValueError(f"Invalid surface {surface.name!r}")
+        if len({path.name for path in self.air_paths}) != len(self.air_paths):
+            raise ValueError("Duplicate air path name")
+        for path in self.air_paths:
+            if not path.name or path.zone_a not in self.capacity_j_k:
+                raise ValueError(f"Invalid air path zone for {path.name!r}")
+            if path.zone_b != "outside" and path.zone_b not in self.capacity_j_k and path.zone_b not in self.boundary_names:
+                raise ValueError(f"Unknown air path boundary for {path.name!r}")
+            if path.zone_a == path.zone_b or not all(
+                isfinite(value) and value >= 0 for value in
+                (path.closed_conductance_w_k, path.open_conductance_w_k)
+            ) or path.open_conductance_w_k < path.closed_conductance_w_k:
+                raise ValueError(f"Invalid air path conductance for {path.name!r}")
         for emitter in self.emitters:
             if emitter.zone not in self.capacity_j_k:
                 raise ValueError(f"Unknown emitter zone {emitter.zone!r}")
@@ -111,6 +140,7 @@ class Snapshot:
     solar_gain_w: Mapping[str, float] = field(default_factory=dict)
     ventilation_loss_w: Mapping[str, float] = field(default_factory=dict)
     heater_setpoints_c: Mapping[str, float] = field(default_factory=dict)
+    opening_fractions: Mapping[str, float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -122,6 +152,7 @@ class Forecast:
     initial_conduction_w: Mapping[str, float]
     initial_emitter_release_w: Mapping[str, float]
     initial_setpoint_proxy_gain_w: Mapping[str, float] = field(default_factory=dict)
+    initial_air_path_w: Mapping[str, float] = field(default_factory=dict)
 
 
 def _conduction(house: House, temperatures: Mapping[str, float], outside: float, boundaries: Mapping[str, float]) -> dict[str, float]:
@@ -137,6 +168,23 @@ def _conduction(house: House, temperatures: Mapping[str, float], outside: float,
         result[surface.zone_a] += into_a
         if surface.zone_b in temperatures:
             result[surface.zone_b] -= into_a
+    return result
+
+
+def _air_exchange(house: House, temperatures: Mapping[str, float], outside: float,
+                  boundaries: Mapping[str, float], fractions: Mapping[str, float]) -> dict[str, float]:
+    """Return signed, position-dependent opening heat flow into each room."""
+    result = dict.fromkeys(house.capacity_j_k, 0.0)
+    for path in house.air_paths:
+        other = (
+            outside if path.zone_b == "outside"
+            else temperatures[path.zone_b] if path.zone_b in temperatures
+            else boundaries[path.zone_b]
+        )
+        into_a = path.conductance_w_k(fractions[path.name]) * (other - temperatures[path.zone_a])
+        result[path.zone_a] += into_a
+        if path.zone_b in temperatures:
+            result[path.zone_b] -= into_a
     return result
 
 
@@ -158,10 +206,17 @@ def forecast(house: House, snapshot: Snapshot, horizon_s: float, step_s: float =
         raise ValueError("A setting is required for every setpoint heater")
     if not all(map(isfinite, snapshot.heater_setpoints_c.values())):
         raise ValueError("Non-finite heater setpoint")
+    if set(snapshot.opening_fractions) != {path.name for path in house.air_paths} or any(
+        not isfinite(fraction) or not 0 <= fraction <= 1
+        for fraction in snapshot.opening_fractions.values()
+    ):
+        raise ValueError("Invalid opening fractions")
     emitter_energy = {emitter.name: float(snapshot.emitter_stored_j.get(emitter.name, 0.0)) for emitter in house.emitters}
     if any(not isfinite(value) or value < 0 for value in emitter_energy.values()):
         raise ValueError("Invalid emitter energy")
     initial_conduction = _conduction(house, temperatures, snapshot.outside_c, snapshot.boundary_temperatures_c)
+    initial_air_path = _air_exchange(house, temperatures, snapshot.outside_c,
+                                     snapshot.boundary_temperatures_c, snapshot.opening_fractions)
     initial_release = {
         emitter.name: emitter_energy[emitter.name] / emitter.release_time_s
         for emitter in house.emitters
@@ -175,8 +230,10 @@ def forecast(house: House, snapshot: Snapshot, horizon_s: float, step_s: float =
     while elapsed < horizon_s:
         dt = min(step_s, horizon_s - elapsed)
         into = _conduction(house, temperatures, snapshot.outside_c, snapshot.boundary_temperatures_c)
+        air = _air_exchange(house, temperatures, snapshot.outside_c,
+                            snapshot.boundary_temperatures_c, snapshot.opening_fractions)
         for zone in temperatures:
-            into[zone] += (
+            into[zone] += air[zone] + (
                 snapshot.internal_gain_w.get(zone, 0.0)
                 + snapshot.solar_gain_w.get(zone, 0.0)
                 - snapshot.ventilation_loss_w.get(zone, 0.0)
@@ -198,7 +255,8 @@ def forecast(house: House, snapshot: Snapshot, horizon_s: float, step_s: float =
             for zone, value in temperatures.items()
         }
         elapsed += dt
-    return Forecast(temperatures, emitter_energy, initial_conduction, initial_release, initial_setpoint_gain)
+    return Forecast(temperatures, emitter_energy, initial_conduction, initial_release,
+                    initial_setpoint_gain, initial_air_path)
 
 
 def r_for_layers(layers_m_w_mk: tuple[tuple[float, float], ...], surface_r_m2k_w: float = 0.0) -> float:

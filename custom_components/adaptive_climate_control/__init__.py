@@ -14,7 +14,7 @@ from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.helpers.typing import ConfigType
 
 from .const import DOMAIN
-from .model import Emitter, House, SetpointHeatProxy, Surface
+from .model import AirPath, Emitter, House, SetpointHeatProxy, Surface
 
 
 ROOM_SCHEMA = vol.Schema(
@@ -32,6 +32,16 @@ SURFACE_SCHEMA = vol.Schema(
         vol.Required("zone_b"): cv.string,
         vol.Required("area_m2"): vol.All(vol.Coerce(float), vol.Range(min=0)),
         vol.Required("u_w_m2k"): vol.All(vol.Coerce(float), vol.Range(min=0)),
+    }
+)
+AIR_PATH_SCHEMA = vol.Schema(
+    {
+        vol.Required("name"): cv.string,
+        vol.Required("zone_a"): cv.string,
+        vol.Required("zone_b"): cv.string,
+        vol.Required("position_entity"): cv.entity_id,
+        vol.Required("closed_conductance_w_k"): vol.All(vol.Coerce(float), vol.Range(min=0)),
+        vol.Required("open_conductance_w_k"): vol.All(vol.Coerce(float), vol.Range(min=0)),
     }
 )
 EMITTER_SCHEMA = vol.Schema(
@@ -55,6 +65,7 @@ DOMAIN_SCHEMA = vol.Schema(
         vol.Required("outside_entity"): cv.entity_id,
         vol.Required("rooms"): vol.Schema({cv.string: ROOM_SCHEMA}),
         vol.Optional("surfaces", default=list): [SURFACE_SCHEMA],
+        vol.Optional("air_paths", default=list): [AIR_PATH_SCHEMA],
         vol.Optional("emitters", default=list): [EMITTER_SCHEMA],
         vol.Optional("setpoint_heaters", default=list): [SETPOINT_HEATER_SCHEMA],
         vol.Optional("boundaries", default=dict): BOUNDARY_SCHEMA,
@@ -69,6 +80,8 @@ def _build_house(settings: ConfigType) -> House:
     house = House(
         capacity_j_k={name: room["capacity_j_k"] for name, room in settings["rooms"].items()},
         surfaces=tuple(Surface(**surface) for surface in settings["surfaces"]),
+        air_paths=tuple(AirPath(**{key: value for key, value in path.items() if key != "position_entity"})
+                        for path in settings["air_paths"]),
         emitters=tuple(Emitter(**emitter) for emitter in settings["emitters"]),
         boundary_names=tuple(settings["boundaries"]),
         setpoint_heaters=tuple(

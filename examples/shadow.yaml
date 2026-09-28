@@ -10,6 +10,17 @@ adaptive_climate_control:
       recent_heating_power_entity: sensor.living_room_heating_power_1h
       capacity_j_k: 1000000
   boundaries: {}
+  # Optional when a named room and a measured/estimated adjoining temperature
+  # are available. Add the adjoining entity to boundaries, then an air path:
+  # boundaries:
+  #   cold_hall: sensor.cold_hall_temperature
+  # air_paths:
+  #   - name: living_room_hall_door
+  #     zone_a: living_room
+  #     zone_b: cold_hall
+  #     position_entity: input_select.living_room_hall_door_position
+  #     closed_conductance_w_k: 1
+  #     open_conductance_w_k: 40
   emitters:
     - name: living_room_emitter
       zone: living_room

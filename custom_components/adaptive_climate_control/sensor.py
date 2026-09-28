@@ -52,6 +52,14 @@ def _age_minutes(hass: HomeAssistant, entity_id: str, now: datetime) -> float | 
     return max(0.0, (now - reported).total_seconds() / 60)
 
 
+def _opening_fraction(hass: HomeAssistant, entity_id: str) -> float | None:
+    state = hass.states.get(entity_id)
+    if state is None:
+        return None
+    return {"Closed": 0.0, "20%": 0.2, "40%": 0.4, "60%": 0.6,
+            "80%": 0.8, "Open": 1.0}.get(state.state)
+
+
 class ShadowForecastSensor(SensorEntity):
     """Expose a model prediction without any heater service calls."""
 
@@ -88,8 +96,13 @@ class ShadowForecastSensor(SensorEntity):
             data["name"]: _number(self.hass, data["setpoint_entity"])
             for data in settings["setpoint_heaters"]
         }
+        opening_fractions = {
+            data["name"]: _opening_fraction(self.hass, data["position_entity"])
+            for data in settings["air_paths"]
+        }
         if outside is None or any(
-            value is None for value in (*temps.values(), *boundaries.values(), *heater_settings.values())
+            value is None for value in (*temps.values(), *boundaries.values(),
+                                        *heater_settings.values(), *opening_fractions.values())
         ):
             self._attr_available = False
             return
@@ -120,10 +133,12 @@ class ShadowForecastSensor(SensorEntity):
             emitter_stored_j=stored,
             emitter_input_w=emitters,
             heater_setpoints_c=heater_settings,
+            opening_fractions=opening_fractions,
         )
         result = forecast(house, snapshot, settings["horizon_minutes"] * 60)
         source_ids = [settings["outside_entity"], *settings["boundaries"].values()]
         source_ids.extend(data["setpoint_entity"] for data in settings["setpoint_heaters"])
+        source_ids.extend(data["position_entity"] for data in settings["air_paths"])
         for data in settings["rooms"].values():
             source_ids.append(data["temperature_entity"])
             source_ids.extend(
@@ -145,6 +160,8 @@ class ShadowForecastSensor(SensorEntity):
             "starting_temperature_c": temps[self._room],
             "boundary_temperatures_c": boundaries,
             "heater_setpoints_c": heater_settings,
+            "opening_fractions": opening_fractions,
+            "initial_air_path_w": round(result.initial_air_path_w[self._room], 2),
             "recent_heater_power_estimate_w": {
                 name: round(value, 2) for name, value in recent_estimates.items()
             },

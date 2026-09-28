@@ -4,7 +4,7 @@ from math import isclose
 
 import pytest
 
-from model import Emitter, House, SetpointHeatProxy, Snapshot, Surface, effective_u, forecast, horizon_from_points, local_point_angles, r_for_layers
+from model import AirPath, Emitter, House, SetpointHeatProxy, Snapshot, Surface, effective_u, forecast, horizon_from_points, local_point_angles, r_for_layers
 from power import coverage_adjusted_power
 
 
@@ -104,3 +104,31 @@ def test_partial_heater_history_does_not_claim_a_full_hour():
     assert coverage_adjusted_power(0, None, None) == 0
     assert coverage_adjusted_power(0, 250, None) == 250
     assert coverage_adjusted_power(1000, 0, 1) == 0
+
+
+def test_cellar_door_opening_cools_bod_and_then_adjacent_room():
+    house = House(
+        {"bod": 500_000, "stove": 2_000_000},
+        surfaces=(Surface("partition", "stove", "bod", 5, 0.5),),
+        boundary_names=("cellar",),
+        air_paths=(AirPath("cellar_door", "bod", "cellar", 2, 60),),
+    )
+    starting = {"bod": 22, "stove": 23}
+    closed = forecast(house, Snapshot(starting, 15, {"cellar": 12}, opening_fractions={"cellar_door": 0}), 1800)
+    partly_open = forecast(house, Snapshot(starting, 15, {"cellar": 12}, opening_fractions={"cellar_door": 0.2}), 1800)
+    open_door = forecast(house, Snapshot(starting, 15, {"cellar": 12}, opening_fractions={"cellar_door": 1}), 1800)
+    assert closed.initial_air_path_w["bod"] == -20
+    assert isclose(partly_open.initial_air_path_w["bod"], -136)
+    assert open_door.initial_air_path_w["bod"] == -600
+    assert open_door.temperatures_c["bod"] < partly_open.temperatures_c["bod"] < closed.temperatures_c["bod"]
+    assert open_door.temperatures_c["stove"] < closed.temperatures_c["stove"]
+
+
+def test_cellar_door_requires_valid_position_and_conductance():
+    house = House({"bod": 500_000}, boundary_names=("cellar",),
+                  air_paths=(AirPath("door", "bod", "cellar", 2, 60),))
+    with pytest.raises(ValueError, match="Invalid opening fractions"):
+        forecast(house, Snapshot({"bod": 22}, 15, {"cellar": 12}), 60)
+    with pytest.raises(ValueError, match="Invalid air path conductance"):
+        House({"bod": 500_000}, boundary_names=("cellar",),
+              air_paths=(AirPath("door", "bod", "cellar", 60, 2),)).validate()
