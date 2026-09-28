@@ -9,9 +9,13 @@ temperature forecast for configured rooms and never calls a heater service.
 
 The thermal model and a YAML-configured HA sensor adapter are under development.
 Current predictions use provisional conductive surfaces, measured room and outside
-temperature, measured heating power, and an approximate emitter heat lag. Openings,
-solar gain, sensor correction, calibrated capacity, and control migration are
-future work. Treat the forecasts as diagnostics, not thermostat decisions.
+temperature, measured floor-heater power where available, and an approximate
+emitter heat lag. A house configuration may add low-gain proxy heat from an
+independent thermostat's manually recorded setting; this is neither measured
+heater power nor a command to that thermostat. The adapter can blend partial
+rolling power history with a current reading. Openings, solar gain, sensor
+correction, calibrated capacity, and control migration are future work. Treat
+the forecasts as diagnostics, not thermostat decisions.
 
 ## Installation
 

@@ -9,7 +9,7 @@ from homeassistant.helpers import config_validation as cv, discovery
 from homeassistant.helpers.typing import ConfigType
 
 from .const import DOMAIN
-from .model import Emitter, House, Surface
+from .model import Emitter, House, SetpointHeatProxy, Surface
 
 
 ROOM_SCHEMA = vol.Schema(
@@ -36,6 +36,14 @@ EMITTER_SCHEMA = vol.Schema(
         vol.Required("release_time_s"): vol.All(vol.Coerce(float), vol.Range(min=1)),
     }
 )
+SETPOINT_HEATER_SCHEMA = vol.Schema(
+    {
+        vol.Required("name"): cv.string,
+        vol.Required("zone"): cv.string,
+        vol.Required("setpoint_entity"): cv.entity_id,
+        vol.Required("effective_conductance_w_k"): vol.All(vol.Coerce(float), vol.Range(min=0)),
+    }
+)
 BOUNDARY_SCHEMA = vol.Schema({cv.string: cv.entity_id})
 DOMAIN_SCHEMA = vol.Schema(
     {
@@ -43,6 +51,7 @@ DOMAIN_SCHEMA = vol.Schema(
         vol.Required("rooms"): vol.Schema({cv.string: ROOM_SCHEMA}),
         vol.Optional("surfaces", default=list): [SURFACE_SCHEMA],
         vol.Optional("emitters", default=list): [EMITTER_SCHEMA],
+        vol.Optional("setpoint_heaters", default=list): [SETPOINT_HEATER_SCHEMA],
         vol.Optional("boundaries", default=dict): BOUNDARY_SCHEMA,
         vol.Optional("horizon_minutes", default=30): vol.All(vol.Coerce(int), vol.Range(min=1, max=240)),
     }
@@ -60,6 +69,14 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         surfaces=tuple(Surface(**surface) for surface in settings["surfaces"]),
         emitters=tuple(Emitter(**emitter) for emitter in settings["emitters"]),
         boundary_names=tuple(settings["boundaries"]),
+        setpoint_heaters=tuple(
+            SetpointHeatProxy(
+                name=heater["name"],
+                zone=heater["zone"],
+                effective_conductance_w_k=heater["effective_conductance_w_k"],
+            )
+            for heater in settings["setpoint_heaters"]
+        ),
     )
     house.validate()
     hass.data[DOMAIN] = {"house": house, "settings": settings}

@@ -53,3 +53,23 @@ def select_heaters(
             selected.append(name)
             remaining -= heater.rated_w
     return tuple(selected)
+
+
+def coverage_adjusted_power(current_w: float, average_w: float | None, coverage: float | None) -> float:
+    """Blend a partial rolling mean with the current reading for missing time.
+
+    HA's statistics average_step spans the samples it has seen, which may cover
+    much less than the requested hour immediately after a reload or a quiet
+    source. The rest of that hour uses the current reading as a conservative
+    holding estimate until the statistics window is filled. An older average
+    without coverage metadata is used as supplied for compatibility.
+    """
+    if not isfinite(current_w):
+        raise ValueError("Non-finite current power")
+    current = max(0.0, current_w)
+    if average_w is None or not isfinite(average_w):
+        return current
+    if coverage is None or not isfinite(coverage):
+        return max(0.0, average_w)
+    covered = min(1.0, max(0.0, coverage))
+    return covered * max(0.0, average_w) + (1.0 - covered) * current

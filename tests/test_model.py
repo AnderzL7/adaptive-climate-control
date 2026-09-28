@@ -4,7 +4,8 @@ from math import isclose
 
 import pytest
 
-from model import Emitter, House, Snapshot, Surface, effective_u, forecast, horizon_from_points, local_point_angles, r_for_layers
+from model import Emitter, House, SetpointHeatProxy, Snapshot, Surface, effective_u, forecast, horizon_from_points, local_point_angles, r_for_layers
+from power import coverage_adjusted_power
 
 
 def test_shared_wall_moves_heat_once_and_conserves_energy():
@@ -73,3 +74,33 @@ def test_measured_boundary_temperature_drives_heat_flow():
     assert warmer.initial_conduction_w["stove"] == 50
     assert colder.initial_conduction_w["stove"] == -50
     assert warmer.temperatures_c["stove"] > 20 > colder.temperatures_c["stove"]
+
+
+def test_manual_floor_setting_warms_bad_then_adjacent_room_without_cooling():
+    house = House(
+        {"bad": 300_000, "soverom": 300_000},
+        (Surface("partition", "bad", "soverom", 3, 1),),
+        setpoint_heaters=(SetpointHeatProxy("bad_floor", "bad", 12),),
+    )
+    low = forecast(house, Snapshot({"bad": 21, "soverom": 20}, 0, heater_setpoints_c={"bad_floor": 18}), 1800)
+    high = forecast(house, Snapshot({"bad": 21, "soverom": 20}, 0, heater_setpoints_c={"bad_floor": 25}), 1800)
+    assert low.initial_setpoint_proxy_gain_w["bad_floor"] == 0
+    assert high.initial_setpoint_proxy_gain_w["bad_floor"] == 48
+    assert high.temperatures_c["bad"] > low.temperatures_c["bad"]
+    assert high.temperatures_c["soverom"] > low.temperatures_c["soverom"]
+
+
+def test_manual_setting_can_replace_outdoor_proxy_for_entry_wall():
+    house = House({"stove": 300_000}, (Surface("entry", "stove", "vindfang_proxy", 4, 1),), boundary_names=("vindfang_proxy",))
+    cold = forecast(house, Snapshot({"stove": 23}, 0, {"vindfang_proxy": 18}), 1800)
+    warm = forecast(house, Snapshot({"stove": 23}, 0, {"vindfang_proxy": 21}), 1800)
+    assert cold.initial_conduction_w["stove"] == -20
+    assert warm.initial_conduction_w["stove"] == -8
+    assert warm.temperatures_c["stove"] > cold.temperatures_c["stove"]
+
+
+def test_partial_heater_history_does_not_claim_a_full_hour():
+    assert isclose(coverage_adjusted_power(0, 1600, 0.25), 400)
+    assert coverage_adjusted_power(0, None, None) == 0
+    assert coverage_adjusted_power(0, 250, None) == 250
+    assert coverage_adjusted_power(1000, 0, 1) == 0

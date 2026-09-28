@@ -37,6 +37,20 @@ class Emitter:
 
 
 @dataclass(frozen=True)
+class SetpointHeatProxy:
+    """Provisional room gain from an independently controlled heater setting.
+
+    The setting alone does not report heater activity. For floor-sensor controls,
+    it is also not a measured surface or air temperature. Calibrate the effective
+    conductance against observed heater power and room trends before trusting it.
+    """
+
+    name: str
+    zone: str
+    effective_conductance_w_k: float
+
+
+@dataclass(frozen=True)
 class House:
     """Geometry and effective heat capacities for the current dwelling."""
 
@@ -44,6 +58,7 @@ class House:
     surfaces: tuple[Surface, ...] = ()
     emitters: tuple[Emitter, ...] = ()
     boundary_names: tuple[str, ...] = ()
+    setpoint_heaters: tuple[SetpointHeatProxy, ...] = ()
 
     def validate(self) -> None:
         """Reject invalid geometry and capacities before forecasting."""
@@ -74,6 +89,13 @@ class House:
                 raise ValueError(f"Unknown emitter zone {emitter.zone!r}")
             if not isfinite(emitter.release_time_s) or emitter.release_time_s <= 0:
                 raise ValueError(f"Invalid release time for {emitter.name!r}")
+        if len({heater.name for heater in self.setpoint_heaters}) != len(self.setpoint_heaters):
+            raise ValueError("Duplicate setpoint heater name")
+        for heater in self.setpoint_heaters:
+            if not heater.name or heater.zone not in self.capacity_j_k:
+                raise ValueError(f"Invalid setpoint heater zone for {heater.name!r}")
+            if not isfinite(heater.effective_conductance_w_k) or heater.effective_conductance_w_k < 0:
+                raise ValueError(f"Invalid setpoint heater conductance for {heater.name!r}")
 
 
 @dataclass(frozen=True)
@@ -88,6 +110,7 @@ class Snapshot:
     internal_gain_w: Mapping[str, float] = field(default_factory=dict)
     solar_gain_w: Mapping[str, float] = field(default_factory=dict)
     ventilation_loss_w: Mapping[str, float] = field(default_factory=dict)
+    heater_setpoints_c: Mapping[str, float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -98,6 +121,7 @@ class Forecast:
     emitter_stored_j: Mapping[str, float]
     initial_conduction_w: Mapping[str, float]
     initial_emitter_release_w: Mapping[str, float]
+    initial_setpoint_proxy_gain_w: Mapping[str, float] = field(default_factory=dict)
 
 
 def _conduction(house: House, temperatures: Mapping[str, float], outside: float, boundaries: Mapping[str, float]) -> dict[str, float]:
@@ -130,6 +154,10 @@ def forecast(house: House, snapshot: Snapshot, horizon_s: float, step_s: float =
         raise ValueError("A temperature is required for every boundary")
     if not all(map(isfinite, snapshot.boundary_temperatures_c.values())):
         raise ValueError("Non-finite boundary temperature")
+    if set(snapshot.heater_setpoints_c) != {heater.name for heater in house.setpoint_heaters}:
+        raise ValueError("A setting is required for every setpoint heater")
+    if not all(map(isfinite, snapshot.heater_setpoints_c.values())):
+        raise ValueError("Non-finite heater setpoint")
     emitter_energy = {emitter.name: float(snapshot.emitter_stored_j.get(emitter.name, 0.0)) for emitter in house.emitters}
     if any(not isfinite(value) or value < 0 for value in emitter_energy.values()):
         raise ValueError("Invalid emitter energy")
@@ -137,6 +165,11 @@ def forecast(house: House, snapshot: Snapshot, horizon_s: float, step_s: float =
     initial_release = {
         emitter.name: emitter_energy[emitter.name] / emitter.release_time_s
         for emitter in house.emitters
+    }
+    initial_setpoint_gain = {
+        heater.name: heater.effective_conductance_w_k
+        * max(0.0, snapshot.heater_setpoints_c[heater.name] - temperatures[heater.zone])
+        for heater in house.setpoint_heaters
     }
     elapsed = 0.0
     while elapsed < horizon_s:
@@ -147,6 +180,10 @@ def forecast(house: House, snapshot: Snapshot, horizon_s: float, step_s: float =
                 snapshot.internal_gain_w.get(zone, 0.0)
                 + snapshot.solar_gain_w.get(zone, 0.0)
                 - snapshot.ventilation_loss_w.get(zone, 0.0)
+            )
+        for heater in house.setpoint_heaters:
+            into[heater.zone] += heater.effective_conductance_w_k * max(
+                0.0, snapshot.heater_setpoints_c[heater.name] - temperatures[heater.zone]
             )
         for emitter in house.emitters:
             name = emitter.name
@@ -161,7 +198,7 @@ def forecast(house: House, snapshot: Snapshot, horizon_s: float, step_s: float =
             for zone, value in temperatures.items()
         }
         elapsed += dt
-    return Forecast(temperatures, emitter_energy, initial_conduction, initial_release)
+    return Forecast(temperatures, emitter_energy, initial_conduction, initial_release, initial_setpoint_gain)
 
 
 def r_for_layers(layers_m_w_mk: tuple[tuple[float, float], ...], surface_r_m2k_w: float = 0.0) -> float:

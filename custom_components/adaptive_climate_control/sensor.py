@@ -13,6 +13,7 @@ from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 
 from .const import DOMAIN, MODEL_VERSION
 from .model import Snapshot, forecast
+from .power import coverage_adjusted_power
 
 SCAN_INTERVAL = timedelta(minutes=5)
 
@@ -84,31 +85,46 @@ class ShadowForecastSensor(SensorEntity):
             name: _number(self.hass, entity_id)
             for name, entity_id in settings["boundaries"].items()
         }
-        if outside is None or any(value is None for value in (*temps.values(), *boundaries.values())):
+        heater_settings = {
+            data["name"]: _number(self.hass, data["setpoint_entity"])
+            for data in settings["setpoint_heaters"]
+        }
+        if outside is None or any(
+            value is None for value in (*temps.values(), *boundaries.values(), *heater_settings.values())
+        ):
             self._attr_available = False
             return
         emitters = {}
         stored = {}
+        recent_estimates = {}
         for emitter in house.emitters:
             room_data = settings["rooms"][emitter.zone]
             input_entity = room_data.get("heating_power_entity")
             recent_entity = room_data.get("recent_heating_power_entity")
             input_w = _number(self.hass, input_entity) if input_entity else 0.0
             recent_w = _number(self.hass, recent_entity) if recent_entity else 0.0
-            if input_w is None or recent_w is None:
+            if input_w is None:
                 self._attr_available = False
                 return
+            recent_state = self.hass.states.get(recent_entity) if recent_entity else None
+            try:
+                coverage = float(recent_state.attributes["age_coverage_ratio"]) if recent_state else None
+            except (KeyError, TypeError, ValueError):
+                coverage = None
             emitters[emitter.name] = max(0.0, input_w)
-            stored[emitter.name] = max(0.0, recent_w) * emitter.release_time_s
+            recent_estimates[emitter.name] = coverage_adjusted_power(input_w, recent_w, coverage)
+            stored[emitter.name] = recent_estimates[emitter.name] * emitter.release_time_s
         snapshot = Snapshot(
             temperatures_c=temps,
             outside_c=outside,
             boundary_temperatures_c=boundaries,
             emitter_stored_j=stored,
             emitter_input_w=emitters,
+            heater_setpoints_c=heater_settings,
         )
         result = forecast(house, snapshot, settings["horizon_minutes"] * 60)
         source_ids = [settings["outside_entity"], *settings["boundaries"].values()]
+        source_ids.extend(data["setpoint_entity"] for data in settings["setpoint_heaters"])
         for data in settings["rooms"].values():
             source_ids.append(data["temperature_entity"])
             source_ids.extend(
@@ -127,11 +143,20 @@ class ShadowForecastSensor(SensorEntity):
             "shadow_only": True,
             "horizon_minutes": settings["horizon_minutes"],
             "starting_temperature_c": temps[self._room],
+            "boundary_temperatures_c": boundaries,
+            "heater_setpoints_c": heater_settings,
+            "recent_heater_power_estimate_w": {
+                name: round(value, 2) for name, value in recent_estimates.items()
+            },
             "ha_input_age_minutes": input_age,
             "ha_inputs_over_45_minutes": [entity_id for entity_id, age in input_age.items() if age > 45],
             "initial_conduction_w": round(result.initial_conduction_w[self._room], 2),
             "emitter_release_w": round(sum(
                 result.initial_emitter_release_w[emitter.name]
                 for emitter in house.emitters if emitter.zone == self._room
+            ), 2),
+            "setpoint_proxy_gain_w": round(sum(
+                result.initial_setpoint_proxy_gain_w[heater.name]
+                for heater in house.setpoint_heaters if heater.zone == self._room
             ), 2),
         }
