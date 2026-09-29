@@ -6,6 +6,8 @@ adaptive_climate_control:
   rooms:
     living_room:
       temperature_entity: sensor.living_room_temperature
+      humidity_entity: sensor.living_room_humidity  # optional comfort estimate
+      # indoor_air_speed_entity: sensor.living_room_air_speed  # optional local m/s or km/h
       heating_power_entity: sensor.living_room_heating_power
       recent_heating_power_entity: sensor.living_room_heating_power_1h
       capacity_j_k: 1000000
@@ -25,6 +27,21 @@ adaptive_climate_control:
     - name: living_room_emitter
       zone: living_room
       release_time_s: 900
+      # temperature_entity: sensor.living_room_floor_temperature
+      # thermal_capacity_j_k: 100000  # only after calibration; otherwise recent power sets stored heat
+  # This publishes diagnostic attributes only; it does not switch a heater.
+  # shadow_controls:
+  #   living_room:
+  #     target: "{{ state_attr('climate.living_room', 'temperature') }}"
+  #     heater_entity: climate.living_room_physical_thermostat
+  #     last_on_entity: input_datetime.living_room_heating_since
+  #     last_off_entity: input_datetime.living_room_idle_since
+  #     emitter_name: living_room_emitter
+  #     comfort_limit: sensor.living_room_comfort_floor_limit
+  #     absolute_limit: 25.5
+  #     power_peak_veto: "{{ 1 if is_state('binary_sensor.power_peak', 'on') else 0 }}"
+  #     min_on_s: 900
+  #     min_off_s: 900
   surfaces:
     - name: living_room_outer_wall
       zone_a: living_room

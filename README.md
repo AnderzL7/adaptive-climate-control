@@ -18,6 +18,37 @@ recorded positions; calibrated airflow, solar gain, sensor correction, heat
 capacity, and control migration remain future work. Treat
 the forecasts as diagnostics, not thermostat decisions.
 
+Version `0.5.0-shadow` adds optional humidity-aware comfort attributes to the
+same room forecast sensors. `current_comfort_temperature_c` and
+`forecast_comfort_temperature_c` use the existing apparent-temperature formula
+and the same 35%/60% blend used by the current Gaming/Sov climate templates.
+The future relative humidity assumes constant vapor pressure over the forecast;
+it does not yet predict cooking, showers, fan extraction, or humidity trends.
+`indoor_air_speed_entity` is optional and must measure or estimate air speed at
+the occupant in m/s or km/h. Outdoor weather wind is not a valid direct input.
+With no indoor airspeed source, the comfort estimate assumes 0 m/s and says so
+in an attribute. The physical temperature forecast remains dry-bulb air
+temperature.
+
+An emitter may declare `temperature_entity` to report its measured temperature.
+Without an independently calibrated `thermal_capacity_j_k`, stored heat still
+uses recent electrical power. With both settings, the measured emitter-room
+temperature difference initializes stored heat. The temperature sensor may be
+embedded in the floor rather than at its surface, so a floor material rating
+must not automatically be used as that sensor's absolute limit.
+
+Optional `shadow_controls` evaluate future heater decisions without calling
+actuator services. Each room control uses the forecast comfort temperature,
+configured target and actual heater action. Minimum on and off durations default
+to 900 seconds. A power veto or absolute emitter ceiling forces off immediately;
+a comfort ceiling normally respects minimum on time. Missing configured limits
+fail off, while omitted limits impose no constraint. The comfort and absolute
+limits, target, power veto, and humidity request can each be a number, entity ID,
+or Home Assistant template. Each control currently needs existing heater
+transition timestamp entities for a reliable duration comparison. See the
+private house configuration or adapt the example below; the active HA heater
+automations still own every real switching decision.
+
 ## Installation
 
 The repository can be added to HACS as a custom **Integration** repository, or

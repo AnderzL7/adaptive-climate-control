@@ -12,6 +12,8 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 
 from .const import DOMAIN, MODEL_VERSION
+from .comfort import forecast_comfort_c
+from .control_adapter import shadow_control
 from .model import Snapshot, forecast
 from .power import coverage_adjusted_power
 
@@ -58,6 +60,20 @@ def _opening_fraction(hass: HomeAssistant, entity_id: str) -> float | None:
         return None
     return {"Closed": 0.0, "20%": 0.2, "40%": 0.4, "60%": 0.6,
             "80%": 0.8, "Open": 1.0}.get(state.state)
+
+
+def _indoor_air_speed(hass: HomeAssistant, entity_id: str) -> float | None:
+    """Read local air speed in m/s; reject unknown units and outdoor wind proxies."""
+    state = hass.states.get(entity_id)
+    value = _number(hass, entity_id)
+    if state is None or value is None or value < 0:
+        return None
+    unit = state.attributes.get("unit_of_measurement")
+    if unit == "m/s":
+        return value
+    if unit == "km/h":
+        return value / 3.6
+    return None
 
 
 class ShadowForecastSensor(SensorEntity):
@@ -109,6 +125,8 @@ class ShadowForecastSensor(SensorEntity):
         emitters = {}
         stored = {}
         recent_estimates = {}
+        emitter_temperatures = {}
+        emitter_energy_sources = {}
         for emitter in house.emitters:
             room_data = settings["rooms"][emitter.zone]
             input_entity = room_data.get("heating_power_entity")
@@ -126,6 +144,14 @@ class ShadowForecastSensor(SensorEntity):
             emitters[emitter.name] = max(0.0, input_w)
             recent_estimates[emitter.name] = coverage_adjusted_power(input_w, recent_w, coverage)
             stored[emitter.name] = recent_estimates[emitter.name] * emitter.release_time_s
+            emitter_settings = next(data for data in settings["emitters"] if data["name"] == emitter.name)
+            temp_entity = emitter_settings.get("temperature_entity")
+            measured = _number(self.hass, temp_entity) if temp_entity else None
+            emitter_temperatures[emitter.name] = measured
+            emitter_energy_sources[emitter.name] = "recent_power"
+            if measured is not None and emitter.thermal_capacity_j_k is not None:
+                stored[emitter.name] = max(0.0, measured - temps[emitter.zone]) * emitter.thermal_capacity_j_k
+                emitter_energy_sources[emitter.name] = "measured_temperature"
         snapshot = Snapshot(
             temperatures_c=temps,
             outside_c=outside,
@@ -142,8 +168,10 @@ class ShadowForecastSensor(SensorEntity):
         for data in settings["rooms"].values():
             source_ids.append(data["temperature_entity"])
             source_ids.extend(
-                data[key] for key in ("heating_power_entity", "recent_heating_power_entity") if key in data
+                data[key] for key in ("heating_power_entity", "recent_heating_power_entity",
+                                      "humidity_entity", "indoor_air_speed_entity") if key in data
             )
+        source_ids.extend(data["temperature_entity"] for data in settings["emitters"] if "temperature_entity" in data)
         now = datetime.now(UTC)
         input_age = {
             entity_id: round(age, 1)
@@ -152,12 +180,30 @@ class ShadowForecastSensor(SensorEntity):
         }
         self._attr_native_value = round(result.temperatures_c[self._room], 3)
         self._attr_available = True
+        room_data = settings["rooms"][self._room]
+        humidity_entity = room_data.get("humidity_entity")
+        humidity = _number(self.hass, humidity_entity) if humidity_entity else None
+        air_entity = room_data.get("indoor_air_speed_entity")
+        air_speed = _indoor_air_speed(self.hass, air_entity) if air_entity else None
+        comfort = None
+        if humidity is not None and 0 <= humidity <= 100:
+            comfort = forecast_comfort_c(temps[self._room], result.temperatures_c[self._room],
+                                         humidity, air_speed if air_speed is not None else 0.0)
         self._attr_extra_state_attributes = {
             "model_version": MODEL_VERSION,
             "model_reload_generation": self._runtime["generation"],
             "shadow_only": True,
             "horizon_minutes": settings["horizon_minutes"],
             "starting_temperature_c": temps[self._room],
+            "current_comfort_temperature_c": round(comfort[0], 3) if comfort else None,
+            "forecast_comfort_temperature_c": round(comfort[1], 3) if comfort else None,
+            "current_humidity_pct": humidity,
+            "indoor_air_speed_m_s": air_speed,
+            "air_speed_assumption": "measured" if air_speed is not None else "still_air_0_m_s",
+            "emitter_temperatures_c": {name: value for name, value in emitter_temperatures.items()
+                                       if any(emitter.name == name and emitter.zone == self._room for emitter in house.emitters)},
+            "emitter_energy_sources": {name: value for name, value in emitter_energy_sources.items()
+                                       if any(emitter.name == name and emitter.zone == self._room for emitter in house.emitters)},
             "boundary_temperatures_c": boundaries,
             "heater_setpoints_c": heater_settings,
             "opening_fractions": opening_fractions,
@@ -177,3 +223,17 @@ class ShadowForecastSensor(SensorEntity):
                 for heater in house.setpoint_heaters if heater.zone == self._room
             ), 2),
         }
+        control = settings["shadow_controls"].get(self._room)
+        if control:
+            if humidity_entity and comfort is None:
+                self._attr_extra_state_attributes["shadow_control_reason"] = "humidity_unavailable"
+            elif air_entity and air_speed is None:
+                self._attr_extra_state_attributes["shadow_control_reason"] = "indoor_air_speed_unavailable"
+            else:
+                emitter_temperature = emitter_temperatures[control["emitter_name"]]
+                self._attr_extra_state_attributes.update(shadow_control(
+                    self.hass, control,
+                    comfort[0] if comfort else temps[self._room],
+                    comfort[1] if comfort else result.temperatures_c[self._room],
+                    emitter_temperature,
+                ))

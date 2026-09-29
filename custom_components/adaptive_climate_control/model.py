@@ -50,6 +50,7 @@ class Emitter:
     name: str
     zone: str
     release_time_s: float
+    thermal_capacity_j_k: float | None = None
 
 
 @dataclass(frozen=True)
@@ -113,11 +114,17 @@ class House:
                 (path.closed_conductance_w_k, path.open_conductance_w_k)
             ) or path.open_conductance_w_k < path.closed_conductance_w_k:
                 raise ValueError(f"Invalid air path conductance for {path.name!r}")
+        if len({emitter.name for emitter in self.emitters}) != len(self.emitters):
+            raise ValueError("Duplicate emitter name")
         for emitter in self.emitters:
             if emitter.zone not in self.capacity_j_k:
                 raise ValueError(f"Unknown emitter zone {emitter.zone!r}")
             if not isfinite(emitter.release_time_s) or emitter.release_time_s <= 0:
                 raise ValueError(f"Invalid release time for {emitter.name!r}")
+            if emitter.thermal_capacity_j_k is not None and (
+                not isfinite(emitter.thermal_capacity_j_k) or emitter.thermal_capacity_j_k <= 0
+            ):
+                raise ValueError(f"Invalid thermal capacity for {emitter.name!r}")
         if len({heater.name for heater in self.setpoint_heaters}) != len(self.setpoint_heaters):
             raise ValueError("Duplicate setpoint heater name")
         for heater in self.setpoint_heaters:
